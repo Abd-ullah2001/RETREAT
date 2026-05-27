@@ -1,2750 +1,1501 @@
-# AI Travel Operations Platform — Production Implementation Reference
-
-> **Author:** Google Antigravity Engineering Team  
-> **Document Type:** MVP Production Implementation Guide  
-> **Stack:** Next.js 15 · FastAPI · PostgreSQL · Redis · Celery · LangGraph · AWS ECS · Vercel  
-> **Status:** MVP — Active Development  
-> **Last Updated:** 2026-05-19
+# Retreat — Implementation Plan
+### AI-Powered Trip Planning & Booking Automation
 
 ---
 
-## Table of Contents
+## HOW TO READ THIS DOCUMENT
 
-1. [Repository Structure](#1-repository-structure)
-2. [Environment & Configuration Management](#2-environment--configuration-management)
-3. [Backend Architecture](#3-backend-architecture)
-4. [Database Layer](#4-database-layer)
-5. [Queue & Async Architecture](#5-queue--async-architecture)
-6. [Cache Management](#6-cache-management)
-7. [AI Orchestration Layer](#7-ai-orchestration-layer)
-8. [Safety, Security & Resilience](#8-safety-security--resilience)
-9. [Logging, Monitoring & Observability](#9-logging-monitoring--observability)
-10. [CI/CD Pipeline — GitHub Actions](#10-cicd-pipeline--github-actions)
-11. [Docker & Deployment](#11-docker--deployment)
-12. [External API Resilience](#12-external-api-resilience)
-13. [Incident Response Runbook](#13-incident-response-runbook)
-14. [Development Phase Checklist](#14-development-phase-checklist)
+This document is written for an AI coding agent (antigravity) to carry out the full implementation.
+Every section is labeled with one of two tags:
+
+- `[YOU]` — A manual step the **human must do** (create accounts, copy keys, click buttons). The AI cannot do this.
+- `[AI]` — The AI agent builds this. The human does not need to do anything except approve.
+
+**Rules for the AI agent — read before starting:**
+- Never invent environment variable names. Every variable is defined in Phase 0 and listed in the final ENV reference.
+- Never skip a phase. Complete each phase in order. Mark it done before moving forward.
+- Never use placeholder logic. If a function is listed, implement it fully.
+- When in doubt about a type, use the Zod schema defined in the relevant service.
+- Framer Motion is used on every interactive UI element. This is non-negotiable.
+- Do not import `dotenv` anywhere except `config.ts` / `config.py`. All env vars come from there.
+- All API responses must match the defined response schemas exactly. No extra fields, no missing fields.
+- Never hardcode a URL, key, or secret in the code. Always read from config.
 
 ---
 
-## 1. Repository Structure
+## PROJECT OVERVIEW
 
-### 1.1 Monorepo Layout
+**Name:** Retreat
+**What it does:** A full trip planning and booking automation platform. Users search for accommodation across Booking.com and VRBO, discover local activities via Google Places, receive an AI-generated day-by-day itinerary, and trigger an automated smart inquiry workflow (AI-drafted message sent via WhatsApp) to property owners with a single tap.
+
+**Core user flow:**
+1. User logs in with Google OAuth via Supabase Auth
+2. User picks a destination, dates, and group size on the dashboard
+3. App loads available properties (Booking.com + Airbnb) and activities (Google Places) in parallel
+4. NVIDIA AI generates a full day-by-day itinerary with the best matches
+5. User sees animated property cards — taps **Interested** or **Not Interested**
+6. "Interested" triggers the smart inquiry workflow: AI drafts a WhatsApp message, user reviews it, taps "Open in WhatsApp" — message opens in their own WhatsApp pre-filled and ready to send to the host
+
+---
+
+## TECH STACK REFERENCE
+
+Keep this visible at all times. Every technology decision is final unless explicitly changed.
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 15 (App Router), Tailwind CSS 4, Framer Motion 11, TanStack Query v5, Zustand v5, Leaflet + react-leaflet, shadcn/ui + Radix UI, React Hook Form + Zod |
+| Backend API | Node.js 22, Fastify 5 |
+| AI Service | Python 3.12, FastAPI, NVIDIA NIM API (meta/llama-3.1-70b-instruct or nvidia/nemotron) |
+| Auth | Supabase Auth (Google OAuth + JWT) |
+| Database | Supabase Postgres |
+| Cache | Upstash Redis (REST SDK) |
+| Queue | Upstash QStash |
+| Property API | RapidAPI — Booking.com (`booking-com15.p.rapidapi.com`) + Airbnb (`airbnb13.p.rapidapi.com`) |
+| Activities API | Google Places API (New) |
+| Maps | Leaflet + react-leaflet (OpenStreetMap tiles — no account, no key) |
+| Messaging | WhatsApp `wa.me` deep link — opens in user's own WhatsApp, no API required |
+| Logging | Pino (Node.js) → Axiom log drain |
+| Error Tracking | Sentry (frontend + backend) |
+| Frontend Host | Vercel |
+| Backend Host | Railway.app |
+| CI/CD | GitHub Actions |
+
+---
+
+## COLOR SYSTEM & DESIGN TOKENS
+
+The AI must use these exact values throughout the entire frontend. Never use ad-hoc hex codes.
+
+```ts
+// tailwind.config.ts — extend colors with:
+colors: {
+  brand: {
+    primary: '#5B4EE8',      // deep indigo — primary actions, active states
+    secondary: '#FF6B6B',    // coral red — accents, CTAs
+    accent: '#FFD93D',       // golden yellow — highlights, badges
+    teal: '#4ECDC4',         // teal — success states, confirmed
+    dark: '#0F0E17',         // near-black — backgrounds
+    card: '#1A1826',         // card backgrounds
+    border: '#2D2B3D',       // borders
+    muted: '#6B6880',        // muted text
+  }
+}
+```
+
+**Dark theme only.** Background: `#0F0E17`. All pages use dark theme.
+
+---
+
+## FRAMER MOTION RULES
+
+The AI must apply these animations. These are not optional.
+
+1. **Page transitions** — Every page uses `<AnimatePresence>` with a slide-up + fade: `initial={{ opacity: 0, y: 24 }}`, `animate={{ opacity: 1, y: 0 }}`, `exit={{ opacity: 0, y: -24 }}`, `transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}`
+
+2. **Property cards** — Enter with staggered fade-up. Each card: `initial={{ opacity: 0, y: 32 }}`, `animate={{ opacity: 1, y: 0 }}`, `transition={{ delay: index * 0.08 }}`. Hover: `whileHover={{ y: -4, boxShadow: '0 20px 60px rgba(91,78,232,0.25)' }}`
+
+3. **Interested/Not Interested swipe** — Cards animate out: Interested → `x: 300, rotate: 15, opacity: 0`. Not Interested → `x: -300, rotate: -15, opacity: 0`. Duration: `0.4s`, ease: spring `stiffness: 200, damping: 20`
+
+4. **Dashboard stats** — Numbers count up from 0 using `useMotionValue` + `useTransform` + `animate()`
+
+5. **Itinerary items** — Stagger in from left: `initial={{ x: -20, opacity: 0 }}`, delay `index * 0.1`
+
+6. **Floating gradient orbs** — Background decoration on landing and dashboard. Animate with `animate={{ x: [0, 30, 0], y: [0, -20, 0] }}`, `transition={{ repeat: Infinity, duration: 8, ease: 'easeInOut' }}`
+
+7. **Buttons** — All buttons: `whileTap={{ scale: 0.96 }}`, `whileHover={{ scale: 1.02 }}`
+
+8. **Loading skeleton** — Shimmer animation using `animate={{ backgroundPosition: ['200% 0', '-200% 0'] }}` with gradient background
+
+---
+
+## PROJECT FOLDER STRUCTURE
+
+The AI must create this exact folder structure before writing any code.
 
 ```
-antigravity-travel/
+retreat/
+│
+├── backend/                          # Node.js 22 + Fastify 5 API
+│   ├── src/
+│   │   ├── index.ts                  # Fastify app entry point
+│   │   ├── config.ts                 # All env vars loaded here (dotenv)
+│   │   ├── plugins/
+│   │   │   ├── supabase.ts           # Supabase client plugin
+│   │   │   ├── redis.ts              # Upstash Redis client plugin
+│   │   │   ├── cors.ts               # CORS config
+│   │   │   ├── rateLimit.ts          # Rate limiter (@fastify/rate-limit)
+│   │   │   └── sentry.ts             # Sentry init
+│   │   │
+│   │   ├── routes/
+│   │   │   ├── health.ts             # GET /health
+│   │   │   ├── auth.ts               # POST /auth/verify, GET /auth/me
+│   │   │   ├── properties.ts         # GET /properties/search
+│   │   │   ├── activities.ts         # GET /activities/search
+│   │   │   ├── trips.ts              # POST /trips, GET /trips/:id, GET /trips (user list)
+│   │   │   ├── inquiries.ts          # POST /inquiries (trigger workflow)
+│   │   │   └── messages.ts           # GET /messages/:tripId (inquiry thread)
+│   │   │
+│   │   ├── services/
+│   │   │   ├── bookingService.ts     # Booking.com search via RapidAPI
+│   │   │   ├── airbnbService.ts      # Airbnb search via RapidAPI
+│   │   │   ├── placesService.ts      # Google Places API calls
+│   │   │   ├── cacheService.ts       # Redis get/set/invalidate helpers
+│   │   │   ├── qstashService.ts      # Enqueue jobs to Upstash QStash
+│   │   │   ├── whatsappService.ts    # wa.me deep link generator (no API — opens user's WhatsApp)
+│   │   │   └── authService.ts        # Supabase JWT verification
+│   │   │
+│   │   ├── workers/
+│   │   │   └── inquiryWorker.ts      # POST /worker/inquiry — QStash calls this
+│   │   │
+│   │   ├── middleware/
+│   │   │   ├── authenticate.ts       # JWT auth hook (Fastify preHandler)
+│   │   │   └── requestLogger.ts      # Pino structured request logging
+│   │   │
+│   │   ├── schemas/
+│   │   │   ├── property.ts           # Zod schema: PropertySchema
+│   │   │   ├── activity.ts           # Zod schema: ActivitySchema
+│   │   │   ├── trip.ts               # Zod schema: TripSchema
+│   │   │   └── inquiry.ts            # Zod schema: InquirySchema
+│   │   │
+│   │   └── lib/
+│   │       ├── rapidapi.ts           # Shared RapidAPI Axios client (x-rapidapi-key header)
+│   │       └── logger.ts             # Pino logger instance
+│   │
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── .env.example
+│   └── Dockerfile
+│
+├── ai-service/                       # Python 3.12 + FastAPI AI service
+│   ├── app/
+│   │   ├── main.py                   # FastAPI entry point
+│   │   ├── config.py                 # Pydantic settings
+│   │   ├── routers/
+│   │   │   ├── plan.py               # POST /plan — generate itinerary
+│   │   │   └── message.py            # POST /message — generate WhatsApp draft
+│   │   ├── services/
+│   │   │   ├── planner.py            # NVIDIA NIM API trip planning logic
+│   │   │   └── composer.py           # NVIDIA NIM API message drafting logic
+│   │   └── schemas/
+│   │       ├── plan.py               # Pydantic models for plan request/response
+│   │       └── message.py            # Pydantic models for message request/response
+│   ├── requirements.txt
+│   ├── .env.example
+│   └── Dockerfile
+│
+├── frontend/                         # Next.js 15 App Router
+│   ├── app/
+│   │   ├── layout.tsx                # Root layout: providers, fonts, global styles
+│   │   ├── page.tsx                  # Landing page (animated hero, login CTA)
+│   │   ├── dashboard/
+│   │   │   └── page.tsx              # Main dashboard: search form + results
+│   │   ├── trip/
+│   │   │   └── [tripId]/
+│   │   │       └── page.tsx          # Trip detail: itinerary + property cards + map
+│   │   ├── inquiries/
+│   │   │   └── page.tsx              # My inquiries: status tracking
+│   │   └── auth/
+│   │       └── callback/
+│   │           └── page.tsx          # Supabase OAuth callback handler
+│   │
+│   ├── components/
+│   │   ├── ui/                       # shadcn/ui base components
+│   │   ├── landing/
+│   │   │   ├── Hero.tsx              # Animated hero section
+│   │   │   └── FloatingOrbs.tsx      # Background gradient orb animation
+│   │   ├── dashboard/
+│   │   │   ├── SearchForm.tsx        # Location + dates + group size form
+│   │   │   ├── StatsBanner.tsx       # Animated counters (properties found, etc.)
+│   │   │   └── TripCard.tsx          # Saved trip card
+│   │   ├── trip/
+│   │   │   ├── PropertyStack.tsx     # Swipeable property card stack
+│   │   │   ├── PropertyCard.tsx      # Single animated property card
+│   │   │   ├── ActivityGrid.tsx      # Animated activity grid
+│   │   │   ├── ActivityCard.tsx      # Single activity card
+│   │   │   ├── ItineraryPanel.tsx    # Day-by-day AI itinerary
+│   │   │   ├── ItineraryDay.tsx      # Single day row with stagger animation
+│   │   │   ├── MapView.tsx           # Leaflet map with OpenStreetMap tiles + property/activity pins
+│   │   │   └── InquiryModal.tsx      # WhatsApp message preview + countdown
+│   │   └── shared/
+│   │       ├── Navbar.tsx            # Top nav with user avatar
+│   │       ├── PageTransition.tsx    # AnimatePresence page wrapper
+│   │       ├── SkeletonCard.tsx      # Shimmer loading skeleton
+│   │       └── StatusBadge.tsx       # Animated status pill
+│   │
+│   ├── lib/
+│   │   ├── api.ts                    # All fetch calls to backend
+│   │   ├── supabase.ts               # Supabase browser client
+│   │   ├── store.ts                  # Zustand global state
+│   │   └── utils.ts                  # cn(), formatDate(), etc.
+│   │
+│   ├── hooks/
+│   │   ├── useProperties.ts          # TanStack Query: fetch properties
+│   │   ├── useActivities.ts          # TanStack Query: fetch activities
+│   │   ├── useTrip.ts                # TanStack Query: fetch trip + itinerary
+│   │   └── useAuth.ts                # Supabase session management
+│   │
+│   ├── types/
+│   │   └── index.ts                  # All TypeScript types (Property, Activity, Trip, etc.)
+│   │
+│   ├── public/
+│   │   └── fonts/                    # Self-hosted Inter + Syne fonts
+│   │
+│   ├── .env.local.example
+│   ├── tailwind.config.ts
+│   └── next.config.ts
+│
 ├── .github/
 │   └── workflows/
-│       ├── pr-checks.yml
-│       ├── deploy-staging.yml
-│       ├── deploy-production.yml
-│       └── rollback.yml
-├── apps/
-│   ├── web/                          # Next.js 15 frontend
-│   │   ├── src/
-│   │   │   ├── app/                  # App router pages
-│   │   │   ├── components/
-│   │   │   ├── store/                # Zustand stores
-│   │   │   ├── hooks/                # React Query hooks
-│   │   │   ├── lib/                  # API clients, utils
-│   │   │   └── types/
-│   │   ├── .env.local
-│   │   └── next.config.ts
-│   └── api/                          # FastAPI backend
-│       ├── app/
-│       │   ├── main.py               # App entrypoint
-│       │   ├── config.py             # Settings (Pydantic BaseSettings)
-│       │   ├── dependencies.py       # Shared FastAPI dependencies
-│       │   ├── middleware/
-│       │   │   ├── logging.py        # Request/response logging middleware
-│       │   │   ├── rate_limit.py     # Rate limiting middleware
-│       │   │   ├── correlation.py    # Correlation ID injection
-│       │   │   └── error_handler.py  # Global exception handlers
-│       │   ├── routers/
-│       │   │   ├── auth.py
-│       │   │   ├── trips.py
-│       │   │   ├── accommodations.py
-│       │   │   ├── activities.py
-│       │   │   ├── restaurants.py
-│       │   │   ├── itinerary.py
-│       │   │   ├── messaging.py
-│       │   │   └── health.py
-│       │   ├── services/
-│       │   │   ├── auth_service.py
-│       │   │   ├── trip_service.py
-│       │   │   ├── accommodation_service.py
-│       │   │   ├── activity_service.py
-│       │   │   ├── restaurant_service.py
-│       │   │   ├── weather_service.py
-│       │   │   ├── ai_planner_service.py
-│       │   │   ├── messaging_service.py
-│       │   │   └── automation_service.py
-│       │   ├── workers/
-│       │   │   ├── celery_app.py
-│       │   │   ├── tasks/
-│       │   │   │   ├── accommodation_tasks.py
-│       │   │   │   ├── activity_tasks.py
-│       │   │   │   ├── weather_tasks.py
-│       │   │   │   ├── itinerary_tasks.py
-│       │   │   │   └── messaging_tasks.py
-│       │   │   └── beat_schedule.py  # Periodic task schedule
-│       │   ├── models/               # SQLAlchemy ORM models
-│       │   ├── schemas/              # Pydantic request/response schemas
-│       │   ├── db/
-│       │   │   ├── session.py        # DB session factory
-│       │   │   └── migrations/       # Alembic migrations
-│       │   ├── cache/
-│       │   │   ├── redis_client.py
-│       │   │   └── strategies.py     # Cache TTL definitions
-│       │   ├── ai/
-│       │   │   ├── agents/
-│       │   │   ├── graphs/
-│       │   │   ├── prompts/
-│       │   │   └── validators.py     # Structured output validators
-│       │   └── utils/
-│       │       ├── circuit_breaker.py
-│       │       ├── retry.py
-│       │       ├── geo.py
-│       │       └── sanitize.py
-│       ├── tests/
-│       │   ├── unit/
-│       │   ├── integration/
-│       │   └── conftest.py
-│       ├── Dockerfile
-│       ├── Dockerfile.worker
-│       ├── alembic.ini
-│       └── pyproject.toml
-├── infrastructure/
-│   ├── terraform/
-│   │   ├── main.tf
-│   │   ├── ecs.tf
-│   │   ├── rds.tf
-│   │   ├── elasticache.tf
-│   │   ├── secrets.tf
-│   │   └── variables.tf
-│   └── docker-compose.yml            # Local dev environment
-├── docs/
-│   ├── implementation.md             # This file
-│   ├── api-reference.md
-│   └── adr/                          # Architecture Decision Records
-└── .env.example
-```
-
-### 1.2 Naming Conventions
-
-| Context | Convention | Example |
-|---|---|---|
-| Python files | snake_case | `trip_service.py` |
-| Python classes | PascalCase | `TripService` |
-| Python functions | snake_case | `get_trip_by_id` |
-| API routes | kebab-case | `/trips/{id}/itinerary-items` |
-| DB tables | snake_case plural | `itinerary_items` |
-| Celery tasks | dot-namespaced | `tasks.accommodation.fetch` |
-| Redis keys | colon-namespaced | `trip:{id}:weather` |
-| Env vars | SCREAMING_SNAKE | `OPENAI_API_KEY` |
-| React components | PascalCase | `ItineraryDayCard` |
-| Zustand stores | camelCase | `useTripStore` |
-
----
-
-## 2. Environment & Configuration Management
-
-### 2.1 Environment Files
-
-Never commit secrets. Use `.env.example` as the contract.
-
-```bash
-# .env.example — commit this file with placeholder values
-
-# ─── App ───────────────────────────────────────────────
-APP_ENV=development                  # development | staging | production
-APP_SECRET_KEY=CHANGEME
-DEBUG=true
-
-# ─── Database ──────────────────────────────────────────
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/travel_db
-DATABASE_POOL_SIZE=20
-DATABASE_MAX_OVERFLOW=10
-DATABASE_POOL_TIMEOUT=30
-
-# ─── Redis ─────────────────────────────────────────────
-REDIS_URL=redis://localhost:6379/0
-REDIS_CACHE_DB=1
-REDIS_QUEUE_DB=2
-REDIS_MAX_CONNECTIONS=50
-
-# ─── Celery ────────────────────────────────────────────
-CELERY_BROKER_URL=redis://localhost:6379/2
-CELERY_RESULT_BACKEND=redis://localhost:6379/3
-CELERY_MAX_RETRIES=5
-CELERY_RETRY_BACKOFF=60
-
-# ─── JWT ───────────────────────────────────────────────
-JWT_SECRET_KEY=CHANGEME
-JWT_ALGORITHM=HS256
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
-JWT_REFRESH_TOKEN_EXPIRE_DAYS=30
-
-# ─── AI ────────────────────────────────────────────────
-OPENAI_API_KEY=CHANGEME
-OPENAI_MODEL=gpt-4o
-OPENAI_MAX_TOKENS=4096
-OPENAI_TIMEOUT_SECONDS=45
-OPENAI_MAX_RETRIES=3
-
-# ─── External APIs ─────────────────────────────────────
-AMADEUS_API_KEY=CHANGEME
-AMADEUS_API_SECRET=CHANGEME
-GOOGLE_PLACES_API_KEY=CHANGEME
-GOOGLE_MAPS_API_KEY=CHANGEME
-YELP_API_KEY=CHANGEME
-FOURSQUARE_API_KEY=CHANGEME
-OPENWEATHER_API_KEY=CHANGEME
-TRIPADVISOR_API_KEY=CHANGEME
-TICKETMASTER_API_KEY=CHANGEME
-
-# ─── Messaging ─────────────────────────────────────────
-TWILIO_ACCOUNT_SID=CHANGEME
-TWILIO_AUTH_TOKEN=CHANGEME
-TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
-ZAPIER_WEBHOOK_URL=CHANGEME
-ZAPIER_WEBHOOK_SECRET=CHANGEME
-
-# ─── AWS ───────────────────────────────────────────────
-AWS_REGION=us-east-1
-AWS_S3_BUCKET=antigravity-travel-assets
-CLOUDWATCH_LOG_GROUP=/antigravity/travel-api
-
-# ─── Monitoring ────────────────────────────────────────
-SENTRY_DSN=CHANGEME
-SENTRY_ENVIRONMENT=development
-SENTRY_TRACES_SAMPLE_RATE=0.2
-
-# ─── Rate Limiting ─────────────────────────────────────
-RATE_LIMIT_DEFAULT=100/minute
-RATE_LIMIT_AI_ENDPOINTS=10/minute
-RATE_LIMIT_AUTH_ENDPOINTS=5/minute
-```
-
-### 2.2 Pydantic Settings — Single Source of Truth
-
-```python
-# app/config.py
-from pydantic_settings import BaseSettings
-from functools import lru_cache
-from typing import Literal
-
-class Settings(BaseSettings):
-    # App
-    app_env: Literal["development", "staging", "production"] = "development"
-    app_secret_key: str
-    debug: bool = False
-
-    # Database
-    database_url: str
-    database_pool_size: int = 20
-    database_max_overflow: int = 10
-    database_pool_timeout: int = 30
-
-    # Redis
-    redis_url: str
-    redis_cache_db: int = 1
-    redis_queue_db: int = 2
-    redis_max_connections: int = 50
-
-    # Celery
-    celery_broker_url: str
-    celery_result_backend: str
-    celery_max_retries: int = 5
-    celery_retry_backoff: int = 60
-
-    # JWT
-    jwt_secret_key: str
-    jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 60
-    jwt_refresh_token_expire_days: int = 30
-
-    # AI
-    openai_api_key: str
-    openai_model: str = "gpt-4o"
-    openai_max_tokens: int = 4096
-    openai_timeout_seconds: int = 45
-    openai_max_retries: int = 3
-
-    # Rate limiting
-    rate_limit_default: str = "100/minute"
-    rate_limit_ai_endpoints: str = "10/minute"
-    rate_limit_auth_endpoints: str = "5/minute"
-
-    # Monitoring
-    sentry_dsn: str | None = None
-    sentry_traces_sample_rate: float = 0.2
-
-    @property
-    def is_production(self) -> bool:
-        return self.app_env == "production"
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-
-@lru_cache()
-def get_settings() -> Settings:
-    return Settings()
-```
-
-### 2.3 AWS Secrets Manager — Production Secrets
-
-In production, all secrets are fetched from AWS Secrets Manager at container startup. Environment variables are never stored in ECS task definitions in plain text.
-
-```python
-# app/utils/secrets.py
-import boto3
-import json
-import logging
-from functools import lru_cache
-
-logger = logging.getLogger(__name__)
-
-@lru_cache()
-def get_secret(secret_name: str, region: str = "us-east-1") -> dict:
-    """
-    Fetch secret from AWS Secrets Manager.
-    Cached in memory for the lifetime of the process.
-    Raises RuntimeError if secret cannot be retrieved.
-    """
-    client = boto3.client("secretsmanager", region_name=region)
-    try:
-        response = client.get_secret_value(SecretId=secret_name)
-        secret = json.loads(response["SecretString"])
-        logger.info(f"Secret '{secret_name}' successfully loaded.")
-        return secret
-    except Exception as e:
-        logger.critical(f"CRITICAL: Failed to load secret '{secret_name}': {e}")
-        raise RuntimeError(f"Cannot start application: secret '{secret_name}' unavailable.") from e
+│       └── ci.yml                    # GitHub Actions CI/CD pipeline
+│
+├── docker-compose.yml                # Local dev: backend + ai-service
+└── README.md
 ```
 
 ---
 
-## 3. Backend Architecture
+## PHASE 0 — MANUAL SETUP [YOU DO ALL OF THIS FIRST]
 
-### 3.1 FastAPI Application Bootstrap
+**The AI cannot proceed until every item in this phase is done.**
+**Collect all credentials into one document before starting Phase 1.**
 
-```python
-# app/main.py
-import logging
-import sentry_sdk
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from sentry_sdk.integrations.fastapi import FastApiIntegration
-from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+---
 
-from app.config import get_settings
-from app.db.session import init_db
-from app.cache.redis_client import init_redis, close_redis
-from app.middleware.logging import RequestLoggingMiddleware
-from app.middleware.correlation import CorrelationIDMiddleware
-from app.middleware.rate_limit import RateLimitMiddleware
-from app.middleware.error_handler import register_exception_handlers
-from app.routers import auth, trips, accommodations, activities, restaurants, itinerary, messaging, health
+### 0.1 — Create a Supabase Project [YOU]
 
-settings = get_settings()
-logger = logging.getLogger(__name__)
+1. Go to https://supabase.com → create a free account
+2. Click **New Project** → name it `retreat`
+3. Set a strong database password. Save it.
+4. Wait for provisioning (~2 minutes)
+5. Go to **Settings → API** and copy:
+   - `Project URL` → `SUPABASE_URL`
+   - `anon public` key → `SUPABASE_ANON_KEY`
+   - `service_role` key → `SUPABASE_SERVICE_KEY` (backend only — never expose to frontend)
 
-# ── Sentry — must be initialized before app starts ──────────────────────────
-if settings.sentry_dsn:
-    sentry_sdk.init(
-        dsn=settings.sentry_dsn,
-        environment=settings.app_env,
-        traces_sample_rate=settings.sentry_traces_sample_rate,
-        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
-        send_default_pii=False,   # GDPR: never send PII to Sentry
-    )
-    logger.info("Sentry initialized.")
+---
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Application startup and shutdown lifecycle.
-    All resource initialization happens here — never in module scope.
-    """
-    logger.info("Starting AI Travel Platform API...")
-    await init_db()
-    await init_redis()
-    logger.info("Startup complete. Accepting requests.")
-    yield
-    logger.info("Shutting down...")
-    await close_redis()
-    logger.info("Shutdown complete.")
+### 0.2 — Run Database Schema in Supabase [YOU]
 
-app = FastAPI(
-    title="AI Travel Operations Platform",
-    version="1.0.0-mvp",
-    docs_url="/docs" if not settings.is_production else None,  # Disable Swagger in prod
-    redoc_url=None,
-    lifespan=lifespan,
-)
+1. In your Supabase project → **SQL Editor → New Query**
+2. Paste and run this SQL exactly:
 
-# ── Middleware — order matters, outermost runs first ────────────────────────
-app.add_middleware(CorrelationIDMiddleware)        # 1. Inject correlation ID
-app.add_middleware(RequestLoggingMiddleware)        # 2. Log request/response
-app.add_middleware(RateLimitMiddleware)             # 3. Rate limiting
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://travel.antigravity.io"] if settings.is_production
-                  else ["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type", "X-Correlation-ID"],
-)
+```sql
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
-# ── Exception Handlers ───────────────────────────────────────────────────────
-register_exception_handlers(app)
+-- USERS
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  name TEXT,
+  avatar_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  last_active TIMESTAMPTZ DEFAULT NOW()
+);
 
-# ── Routers ─────────────────────────────────────────────────────────────────
-app.include_router(health.router, prefix="/health", tags=["health"])
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(trips.router, prefix="/trips", tags=["trips"])
-app.include_router(accommodations.router, prefix="/accommodations", tags=["accommodations"])
-app.include_router(activities.router, prefix="/activities", tags=["activities"])
-app.include_router(restaurants.router, prefix="/restaurants", tags=["restaurants"])
-app.include_router(itinerary.router, prefix="/itinerary", tags=["itinerary"])
-app.include_router(messaging.router, prefix="/messages", tags=["messaging"])
+-- TRIPS
+CREATE TABLE trips (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  destination TEXT NOT NULL,
+  destination_lat FLOAT NOT NULL,
+  destination_lng FLOAT NOT NULL,
+  checkin DATE NOT NULL,
+  checkout DATE NOT NULL,
+  guests INTEGER NOT NULL DEFAULT 2,
+  status TEXT NOT NULL DEFAULT 'planning' CHECK (status IN ('planning', 'active', 'completed')),
+  itinerary JSONB DEFAULT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- PROPERTY INTERACTIONS (interested / not interested)
+CREATE TABLE property_interactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  property_id TEXT NOT NULL,
+  platform TEXT NOT NULL CHECK (platform IN ('booking', 'vrbo')),
+  property_snapshot JSONB NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('interested', 'skipped')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- INQUIRIES (automated booking requests)
+CREATE TABLE inquiries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  property_id TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  property_snapshot JSONB NOT NULL,
+  ai_message TEXT NOT NULL,
+  final_message TEXT NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'whatsapp' CHECK (channel IN ('whatsapp', 'email')),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'sent')),
+  wa_link TEXT,
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ACTIVITY SAVES
+CREATE TABLE saved_activities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  place_id TEXT NOT NULL,
+  activity_snapshot JSONB NOT NULL,
+  day_number INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- INDEXES
+CREATE INDEX idx_trips_user_id ON trips(user_id);
+CREATE INDEX idx_inquiries_trip_id ON inquiries(trip_id);
+CREATE INDEX idx_inquiries_user_id ON inquiries(user_id);
+CREATE INDEX idx_interactions_trip_id ON property_interactions(trip_id);
+CREATE INDEX idx_saved_activities_trip_id ON saved_activities(trip_id);
 ```
 
-### 3.2 Middleware Implementation
+3. Click **Run**. Confirm no errors.
 
-#### Correlation ID Middleware
+---
 
-Every request gets a unique correlation ID. This ID propagates through logs, Celery tasks, AI calls, and external API requests — enabling full distributed tracing.
+### 0.3 — Set Up Google Cloud Console [YOU]
 
-```python
-# app/middleware/correlation.py
-import uuid
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from contextvars import ContextVar
+1. Go to https://console.cloud.google.com → create project named `retreat`
+2. Go to **APIs & Services → Library** and enable:
+   - `Places API (New)` — this is the only Google API needed. Do **not** enable Maps JavaScript API; the map is handled by Leaflet + OpenStreetMap.
+3. Go to **APIs & Services → Credentials → Create Credentials → API Key**
+   - Restrict it to `Places API (New)` only
+   - Save as: `GOOGLE_PLACES_API_KEY`
+4. Go to **APIs & Services → OAuth Consent Screen**
+   - User Type: External → App name: Retreat → add scope: `openid`, `email`, `profile`
+5. Go to **Credentials → Create Credentials → OAuth 2.0 Client ID**
+   - Web Application
+   - Authorized redirect URIs: `https://[YOUR_SUPABASE_PROJECT_REF].supabase.co/auth/v1/callback`
+   - Copy: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+6. Go back to Supabase → **Authentication → Providers → Google** → paste these two values → Save
 
-correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
+---
 
-class CorrelationIDMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        correlation_id = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())
-        correlation_id_var.set(correlation_id)
-        response = await call_next(request)
-        response.headers["X-Correlation-ID"] = correlation_id
-        return response
+### 0.4 — Set Up RapidAPI (Booking.com + Airbnb) [YOU]
 
-def get_correlation_id() -> str:
-    return correlation_id_var.get()
+Both Booking.com and Airbnb are accessed through RapidAPI using a single API key.
+
+1. Go to https://rapidapi.com → sign in to your existing account
+2. Subscribe to **Booking.com API** (by booking-com15):
+   - URL: https://rapidapi.com/booking-com15/api/booking-com15
+   - Select the **Free** plan
+3. Subscribe to **Airbnb API** (by airbnb13):
+   - URL: https://rapidapi.com/airbnb13/api/airbnb13 (or search "Airbnb" and find the one with highest usage)
+   - Select the **Free** plan
+4. Go to **My Apps → Default App → Authorization**
+5. Copy your key: `RAPIDAPI_KEY`
+6. Note the two host values — these go into your `.env`:
+   - `RAPIDAPI_BOOKING_HOST=booking-com15.p.rapidapi.com`
+   - `RAPIDAPI_AIRBNB_HOST=airbnb13.p.rapidapi.com`
+
+**Important:** Both APIs share the same `RAPIDAPI_KEY`. You do not need separate keys.
+
+**Rate limits on free tier:**
+- Booking.com (RapidAPI): ~100 requests/month free — Redis caching is critical
+- Airbnb (RapidAPI): varies by provider — check your subscribed plan
+- Never call either API without checking Redis cache first
+
+---
+
+### 0.5 — Set Up Upstash Redis [YOU]
+
+1. Go to https://upstash.com → create free account
+2. Click **Create Database**
+   - Name: `retreat-cache`
+   - Type: Regional
+   - Region: `us-east-1`
+3. After creation, copy:
+   - `UPSTASH_REDIS_REST_URL`
+   - `UPSTASH_REDIS_REST_TOKEN`
+
+---
+
+### 0.6 — Set Up Upstash QStash [YOU]
+
+1. In your Upstash dashboard → go to **QStash** tab
+2. Copy:
+   - `QSTASH_TOKEN`
+   - `QSTASH_CURRENT_SIGNING_KEY`
+   - `QSTASH_NEXT_SIGNING_KEY`
+3. Your worker endpoint (to be used later): `https://[your-railway-backend]/worker/inquiry`
+
+---
+
+### 0.7 — Get NVIDIA NIM API Key [YOU]
+
+1. Go to https://build.nvidia.com → sign in or create a free account
+2. Go to **API Keys → Generate API Key**
+3. Name it `retreat`
+4. Copy: `NVIDIA_API_KEY`
+5. Base URL to use throughout: `https://integrate.api.nvidia.com/v1`
+6. Model to use throughout: `meta/llama-3.1-70b-instruct` (free tier available — 1000 credits on signup)
+7. The NVIDIA NIM API is OpenAI-compatible — use the `openai` Python SDK pointed at NVIDIA's base URL
+
+---
+
+### 0.8 — WhatsApp Setup [YOU]
+
+No account, API, or credentials needed. WhatsApp deep links work without any setup.
+
+The app uses `wa.me` links to open WhatsApp on the user's own device with the message pre-filled:
+
+```
+https://wa.me/{host_phone_number}?text={url_encoded_message}
 ```
 
-#### Request Logging Middleware
+The message is sent **from the user's own WhatsApp account** to the host. The backend only generates the link — it never sends a message itself.
 
-```python
-# app/middleware/logging.py
-import time
-import logging
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from app.middleware.correlation import get_correlation_id
+**What you need to do:** Nothing. No step required here. Skip to 0.9.
 
-logger = logging.getLogger("api.requests")
+---
 
-SENSITIVE_PATHS = ["/auth/login", "/auth/register"]
+### 0.9 — Maps Setup [YOU]
 
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        start = time.perf_counter()
-        response = await call_next(request)
-        duration_ms = round((time.perf_counter() - start) * 1000, 2)
+Nothing to do. Leaflet + OpenStreetMap require no account, no API key, and no credit card.
 
-        # Never log bodies for auth endpoints
-        log_body = request.url.path not in SENSITIVE_PATHS
+Install during Phase 8: `npm install leaflet react-leaflet @types/leaflet`
 
-        logger.info(
-            "request_processed",
-            extra={
-                "correlation_id": get_correlation_id(),
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": response.status_code,
-                "duration_ms": duration_ms,
-                "client_ip": request.client.host if request.client else "unknown",
-                "user_agent": request.headers.get("user-agent", ""),
-            }
-        )
-
-        # Alert on slow requests
-        if duration_ms > 3000:
-            logger.warning(
-                "slow_request_detected",
-                extra={"path": request.url.path, "duration_ms": duration_ms}
-            )
-
-        return response
+OpenStreetMap tile URL used in `MapView.tsx`:
+```
+https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
 ```
 
-#### Global Exception Handler
-
-```python
-# app/middleware/error_handler.py
-import logging
-import sentry_sdk
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from app.middleware.correlation import get_correlation_id
-
-logger = logging.getLogger("api.errors")
-
-def register_exception_handlers(app: FastAPI):
-
-    @app.exception_handler(Exception)
-    async def unhandled_exception_handler(request: Request, exc: Exception):
-        correlation_id = get_correlation_id()
-        logger.error(
-            "unhandled_exception",
-            extra={
-                "correlation_id": correlation_id,
-                "path": request.url.path,
-                "method": request.method,
-                "error": str(exc),
-                "error_type": type(exc).__name__,
-            },
-            exc_info=True,
-        )
-        sentry_sdk.capture_exception(exc)
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "internal_server_error",
-                "message": "An unexpected error occurred. Our team has been notified.",
-                "correlation_id": correlation_id,
-            }
-        )
-
-    @app.exception_handler(ValueError)
-    async def value_error_handler(request: Request, exc: ValueError):
-        return JSONResponse(
-            status_code=422,
-            content={"error": "validation_error", "message": str(exc)}
-        )
+Attribution (required by OpenStreetMap license — must appear on the map):
+```
+© OpenStreetMap contributors
 ```
 
-### 3.3 Health Check Endpoints
+Skip to 0.10.
 
-Health endpoints are used by ECS, load balancers, and CI/CD pipelines for readiness and liveness verification.
+---
 
-```python
-# app/routers/health.py
-import logging
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
-from redis.asyncio import Redis
-from app.db.session import get_db
-from app.cache.redis_client import get_redis
+### 0.10 — Set Up Sentry [YOU]
 
-router = APIRouter()
-logger = logging.getLogger("health")
+1. Go to https://sentry.io → create free account
+2. Create project → Platform: **Next.js** → name: `retreat-frontend` → copy DSN → `NEXT_PUBLIC_SENTRY_DSN`
+3. Create project → Platform: **Node.js** → name: `retreat-backend` → copy DSN → `SENTRY_DSN`
+4. Create project → Platform: **Python (FastAPI)** → name: `retreat-ai` → copy DSN → `AI_SENTRY_DSN`
 
-@router.get("/live")
-async def liveness():
-    """Kubernetes/ECS liveness probe. Always returns 200 if process is alive."""
-    return {"status": "alive"}
+---
 
-@router.get("/ready")
-async def readiness(db: AsyncSession = Depends(get_db), redis: Redis = Depends(get_redis)):
-    """
-    Deep readiness check. ECS will NOT route traffic until this returns 200.
-    Checks: PostgreSQL connectivity, Redis connectivity.
-    """
-    checks = {}
+### 0.11 — Set Up Axiom (Logging) [YOU]
 
-    # Check PostgreSQL
-    try:
-        await db.execute(text("SELECT 1"))
-        checks["postgres"] = "ok"
-    except Exception as e:
-        logger.error(f"Readiness check: postgres failed — {e}")
-        checks["postgres"] = "error"
+1. Go to https://axiom.co → create free account (no credit card)
+2. Go to **Datasets → New Dataset** → name it `retreat-backend` → create
+3. Go to **Settings → API Tokens → New API Token**
+   - Name: `retreat`
+   - Permissions: **Ingest** only
+   - Copy the token → `AXIOM_API_KEY`
+4. Save the dataset name: `AXIOM_DATASET=retreat-backend`
+5. Railway log drain is configured in Phase 11 after deploy — skip for now
 
-    # Check Redis
-    try:
-        await redis.ping()
-        checks["redis"] = "ok"
-    except Exception as e:
-        logger.error(f"Readiness check: redis failed — {e}")
-        checks["redis"] = "error"
+---
 
-    all_healthy = all(v == "ok" for v in checks.values())
-    status_code = 200 if all_healthy else 503
+### 0.12 — Set Up Railway [YOU]
 
-    return JSONResponse(
-        status_code=status_code,
-        content={"status": "ready" if all_healthy else "degraded", "checks": checks}
-    )
+1. Go to https://railway.app → create account (connect your GitHub)
+2. Create a new project called `retreat`
+3. You will deploy two services here: `backend` (Node.js) and `ai-service` (Python)
+4. Railway auto-deploys from GitHub on push — no manual deploy commands needed
+5. Note your Railway project domain after deploying — it looks like `https://retreat-backend.up.railway.app`
 
-@router.get("/metrics")
-async def metrics():
-    """Lightweight metrics endpoint for CloudWatch custom metrics."""
-    from app.workers.celery_app import celery_app
-    inspect = celery_app.control.inspect()
-    active_tasks = inspect.active() or {}
-    return {
-        "active_celery_tasks": sum(len(v) for v in active_tasks.values()),
-    }
+---
+
+### 0.13 — Create GitHub Repository [YOU]
+
+1. Create a new private repository named `retreat`
+2. Clone locally and initialize the folder structure (Phase 1 will populate it)
+3. Never commit `.env`, `.env.local`, or any file containing a real key
+
+---
+
+### 0.14 — Create Your .env Files [YOU]
+
+Create these two files locally. Never commit them.
+
+**`backend/.env`**
+```env
+NODE_ENV=development
+PORT=3001
+
+# Supabase
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_KEY=your_supabase_service_key
+
+# Cache
+UPSTASH_REDIS_REST_URL=your_upstash_redis_url
+UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_token
+
+# Queue
+QSTASH_TOKEN=your_qstash_token
+QSTASH_CURRENT_SIGNING_KEY=your_qstash_current_signing_key
+QSTASH_NEXT_SIGNING_KEY=your_qstash_next_signing_key
+
+# RapidAPI (Booking.com + Airbnb)
+RAPIDAPI_KEY=your_rapidapi_key
+RAPIDAPI_BOOKING_HOST=booking-com15.p.rapidapi.com
+RAPIDAPI_AIRBNB_HOST=airbnb13.p.rapidapi.com
+
+# Google Places
+GOOGLE_PLACES_API_KEY=your_google_places_api_key
+
+# WhatsApp
+# No credentials needed — wa.me deep links require no API key
+
+# AI Service (internal URL)
+AI_SERVICE_URL=http://localhost:8000
+
+# Logging
+AXIOM_API_KEY=your_axiom_api_key
+AXIOM_DATASET=retreat-backend
+
+# Sentry
+SENTRY_DSN=your_backend_sentry_dsn
+
+# Worker auth secret (shared with QStash)
+WORKER_SECRET=generate-a-random-32-char-string
+```
+
+**`ai-service/.env`**
+```env
+ENVIRONMENT=development
+PORT=8000
+
+NVIDIA_API_KEY=your_nvidia_api_key
+
+SENTRY_DSN=your_ai_sentry_dsn
+```
+
+**`frontend/.env.local`**
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_SENTRY_DSN=your_frontend_sentry_dsn
 ```
 
 ---
 
-## 4. Database Layer
+## PHASE 1 — BACKEND FOUNDATION [AI]
 
-### 4.1 Async SQLAlchemy Session Factory
+**Start here only after Phase 0 is 100% complete.**
 
-```python
-# app/db/session.py
-import logging
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.pool import NullPool
-from app.config import get_settings
+---
 
-settings = get_settings()
-logger = logging.getLogger("db")
+### 1.1 — Initialize Node.js Backend
 
-engine = create_async_engine(
-    settings.database_url,
-    pool_size=settings.database_pool_size,
-    max_overflow=settings.database_max_overflow,
-    pool_timeout=settings.database_pool_timeout,
-    pool_pre_ping=True,          # Validate connections before use — prevents stale connections
-    pool_recycle=3600,           # Recycle connections every hour
-    echo=settings.debug,         # Log SQL only in debug mode, never in production
-)
+Create `backend/package.json` with these exact dependencies:
 
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-    autocommit=False,
-)
-
-async def init_db():
-    """Called at application startup. Validates DB connectivity."""
-    try:
-        async with engine.begin() as conn:
-            from sqlalchemy import text
-            await conn.execute(text("SELECT 1"))
-        logger.info("Database connection validated.")
-    except Exception as e:
-        logger.critical(f"CRITICAL: Cannot connect to database on startup: {e}")
-        raise
-
-async def get_db():
-    """FastAPI dependency: yields an async DB session per request."""
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+```json
+{
+  "name": "retreat-backend",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "fastify": "^5.0.0",
+    "@fastify/cors": "^9.0.0",
+    "@fastify/rate-limit": "^9.0.0",
+    "@fastify/helmet": "^12.0.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@upstash/redis": "^1.34.0",
+    "@upstash/qstash": "^2.7.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
+    "@sentry/node": "^8.0.0",
+    "zod": "^3.23.0",
+    "dotenv": "^16.4.0",
+    "axios": "^1.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.11.0",
+    "@types/node": "^20.0.0"
+  }
+}
 ```
 
-### 4.2 Alembic Migration Strategy
+Create `backend/tsconfig.json` with `target: ES2022`, `module: NodeNext`, `moduleResolution: NodeNext`, `strict: true`, `outDir: dist`, `rootDir: src`.
 
-```ini
-# alembic.ini
-[alembic]
-script_location = app/db/migrations
-sqlalchemy.url = %(DATABASE_URL)s
+---
 
-[loggers]
-keys = root,sqlalchemy,alembic
+### 1.2 — Config Module
 
-[handlers]
-keys = console
+Build `backend/src/config.ts`:
+- Use `dotenv.config()` at the top
+- Export a single `config` object with all typed env vars
+- Throw an error at startup if any required variable is missing
+- Required variables: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `RAPIDAPI_KEY`, `RAPIDAPI_BOOKING_HOST`, `RAPIDAPI_AIRBNB_HOST`, `GOOGLE_PLACES_API_KEY`, `AI_SERVICE_URL`, `WORKER_SECRET`
+- Never import `process.env` anywhere else in the project — only from this file
 
-[formatters]
-keys = generic
-```
+---
 
-**Migration Rules (enforced in code review):**
+### 1.3 — Logger
 
-1. Every schema change requires an Alembic migration — no direct `ALTER TABLE` on production.
-2. All migrations must be reversible (implement `downgrade()`).
-3. Migrations must be tested in staging before production deployment.
-4. Column drops require a 2-phase approach: first deprecate (keep column, stop writing), then drop in the next release.
-5. Never modify an existing migration file. Always create a new one.
+Build `backend/src/lib/logger.ts`:
+- Create a Pino logger instance
+- In development: use `pino-pretty` transport for readable logs
+- In production: output plain JSON (Railway drain picks it up automatically)
+- Export the logger as default
+- Log format must include: `time`, `level`, `requestId`, `msg`
 
-```python
-# Example migration pattern for adding a nullable column safely
-# app/db/migrations/versions/0002_add_ai_score_to_accommodations.py
+---
 
-def upgrade():
-    op.add_column(
-        "accommodations",
-        sa.Column("ai_score", sa.Float(), nullable=True)  # Always nullable first
-    )
+### 1.4 — Fastify App Entry Point
 
-def downgrade():
-    op.drop_column("accommodations", "ai_score")
-```
+Build `backend/src/index.ts`:
 
-### 4.3 Connection Pool Monitoring
+- Create Fastify instance with `logger: false` (we use our own Pino logger)
+- Register plugins in this order: `@fastify/helmet`, `@fastify/cors` (origin: `config.FRONTEND_URL`, credentials: true), `@fastify/rate-limit` (max: 100, timeWindow: '1 minute')
+- Initialize Sentry with `config.SENTRY_DSN` (only when `NODE_ENV === 'production'`)
+- Register all routes with prefix `/api/v1`
+- Register the worker route at `/worker/inquiry` (no auth prefix, but secret-verified)
+- Add a global error handler that logs to Pino and returns `{ error: message, requestId }`
+- Listen on `config.PORT` (default 3001)
 
-```python
-# app/utils/db_health.py
-import logging
-from app.db.session import engine
-
-logger = logging.getLogger("db.pool")
-
-def log_pool_status():
-    """Call periodically from Celery Beat to monitor pool health."""
-    pool = engine.pool
-    logger.info(
-        "db_pool_status",
-        extra={
-            "pool_size": pool.size(),
-            "checked_in": pool.checkedin(),
-            "checked_out": pool.checkedout(),
-            "overflow": pool.overflow(),
-        }
-    )
-    if pool.checkedout() / pool.size() > 0.85:
-        logger.warning("DB_POOL_NEAR_CAPACITY: >85% connections in use. Consider scaling.")
+Route registration order:
+```ts
+app.register(healthRoutes, { prefix: '/api/v1' })
+app.register(authRoutes, { prefix: '/api/v1' })
+app.register(propertyRoutes, { prefix: '/api/v1' })
+app.register(activityRoutes, { prefix: '/api/v1' })
+app.register(tripRoutes, { prefix: '/api/v1' })
+app.register(inquiryRoutes, { prefix: '/api/v1' })
+app.register(messageRoutes, { prefix: '/api/v1' })
+app.register(workerRoutes)
 ```
 
 ---
 
-## 5. Queue & Async Architecture
+### 1.5 — Auth Middleware
 
-### 5.1 Celery Application Configuration
+Build `backend/src/middleware/authenticate.ts`:
 
-```python
-# app/workers/celery_app.py
-from celery import Celery
-from celery.utils.log import get_task_logger
-from kombu import Queue, Exchange
-from app.config import get_settings
+- Fastify `preHandler` hook
+- Reads `Authorization: Bearer <token>` header
+- Verifies JWT using Supabase's `supabase.auth.getUser(token)`
+- On success: attaches `request.user = { id, email }` to the request
+- On failure: throws Fastify error with status 401, message "Unauthorized"
+- Export as `authenticate` — inject this into protected routes only, not globally
 
-settings = get_settings()
+---
 
-celery_app = Celery("antigravity_travel")
+### 1.6 — Health Route
 
-celery_app.config_from_object({
-    "broker_url": settings.celery_broker_url,
-    "result_backend": settings.celery_result_backend,
-    "broker_connection_retry_on_startup": True,
-    "broker_transport_options": {
-        "visibility_timeout": 3600,
-        "max_retries": 5,
-    },
+Build `backend/src/routes/health.ts`:
 
-    # ── Task serialization ──────────────────────────────────────────────────
-    "task_serializer": "json",
-    "result_serializer": "json",
-    "accept_content": ["json"],
-    "task_compression": "gzip",
+`GET /api/v1/health`:
+- Check Redis connectivity: `await redis.ping()` 
+- Check Supabase: simple `select count` on `users` table
+- Check AI service: `GET ${config.AI_SERVICE_URL}/health`
+- Return: `{ status: 'ok', timestamp, services: { redis, supabase, ai_service } }`
+- If any service fails: return status 503 with the failing service marked `'error'`
 
-    # ── Reliability ─────────────────────────────────────────────────────────
-    "task_acks_late": True,          # Only ack after task completes, not on receipt
-    "task_reject_on_worker_lost": True,
-    "task_track_started": True,
-    "task_send_sent_event": True,
+---
 
-    # ── Timeouts ────────────────────────────────────────────────────────────
-    "task_soft_time_limit": 300,     # 5 min: raises SoftTimeLimitExceeded
-    "task_time_limit": 360,          # 6 min: hard kill
+## PHASE 2 — SUPABASE AUTH [AI]
 
-    # ── Queues ──────────────────────────────────────────────────────────────
-    "task_default_queue": "default",
-    "task_queues": [
-        Queue("accommodation_queue", routing_key="accommodation.*"),
-        Queue("activity_queue",      routing_key="activity.*"),
-        Queue("restaurant_queue",    routing_key="restaurant.*"),
-        Queue("weather_queue",       routing_key="weather.*"),
-        Queue("itinerary_queue",     routing_key="itinerary.*"),
-        Queue("inquiry_queue",       routing_key="inquiry.*"),
-        Queue("dead_letter_queue",   routing_key="dead.*"),  # Failed tasks land here
-    ],
+### 2.1 — Supabase Plugin
 
-    # ── Result expiry ───────────────────────────────────────────────────────
-    "result_expires": 86400,         # Results expire after 24 hours
+Build `backend/src/plugins/supabase.ts`:
+- Create Supabase client with `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`
+- Export as `supabase` singleton
+- Use service key for backend only — never expose to frontend via this client
 
-    # ── Worker settings ─────────────────────────────────────────────────────
-    "worker_prefetch_multiplier": 1, # Fair task distribution; important for long tasks
-    "worker_max_tasks_per_child": 200,  # Restart workers periodically to prevent memory leaks
-    "worker_send_task_events": True,
+### 2.2 — Auth Routes
+
+Build `backend/src/routes/auth.ts`:
+
+`POST /api/v1/auth/verify`:
+- Body: `{ access_token: string }`
+- Calls `supabase.auth.getUser(access_token)` to verify
+- On success: upserts user in `users` table (`id`, `email`, `name`, `avatar_url`)
+- Returns: `{ user: { id, email, name, avatar_url } }`
+
+`GET /api/v1/auth/me` (protected — requires `authenticate` hook):
+- Returns the current user object from the `users` table
+
+---
+
+## PHASE 3 — PROPERTY DISCOVERY [AI]
+
+### 3.1 — Property Zod Schema
+
+Build `backend/src/schemas/property.ts`:
+
+```ts
+export const PropertySchema = z.object({
+  id: z.string(),
+  platform: z.enum(['booking', 'airbnb']),
+  name: z.string(),
+  description: z.string().nullable(),
+  imageUrls: z.array(z.string()),
+  pricePerNight: z.number(),
+  currency: z.string().default('USD'),
+  totalPrice: z.number(),
+  rating: z.number().nullable(),
+  reviewCount: z.number().nullable(),
+  maxGuests: z.number(),
+  bedrooms: z.number().nullable(),
+  amenities: z.array(z.string()),
+  lat: z.number(),
+  lng: z.number(),
+  address: z.string(),
+  bookingUrl: z.string().url(),
 })
+export type Property = z.infer<typeof PropertySchema>
 ```
 
-### 5.2 Base Task with Full Safety Measures
+### 3.2 — RapidAPI Shared Client
 
-All tasks inherit from `SafeBaseTask`. Never use raw `@celery_app.task`.
+Build `backend/src/lib/rapidapi.ts`:
 
-```python
-# app/workers/base_task.py
-import logging
-import time
-import sentry_sdk
-from celery import Task
-from celery.exceptions import SoftTimeLimitExceeded
-from app.middleware.correlation import correlation_id_var
+- Export a single Axios instance with:
+  - `baseURL` left empty (each service sets its own host)
+  - Default headers: `'x-rapidapi-key': config.RAPIDAPI_KEY` and `'Content-Type': 'application/json'`
+- This client is imported by both `bookingService.ts` and `airbnbService.ts`
+- Never set the `x-rapidapi-host` header here — each service sets it per-request
 
-logger = logging.getLogger("celery.tasks")
+### 3.3 — Booking.com Service (RapidAPI)
 
-class SafeBaseTask(Task):
-    """
-    Production-safe base task with:
-    - Structured logging
-    - Correlation ID propagation
-    - Sentry error capture
-    - Execution time tracking
-    - Retry with exponential backoff
-    - Soft time limit handling
-    """
-    abstract = True
-    max_retries = 5
-    default_retry_delay = 60  # seconds
+Build `backend/src/services/bookingService.ts`:
 
-    def apply_async(self, *args, **kwargs):
-        # Propagate correlation ID into task headers
-        kwargs.setdefault("headers", {})
-        kwargs["headers"]["correlation_id"] = correlation_id_var.get()
-        return super().apply_async(*args, **kwargs)
+Function `searchProperties(params: { destId: string, checkin: string, checkout: string, adults: number, rooms: number, currencyCode: string })`:
 
-    def on_failure(self, exc, task_id, args, kwargs, einfo):
-        correlation_id = self.request.headers.get("correlation_id", "unknown")
-        logger.error(
-            "task_failed",
-            extra={
-                "task_id": task_id,
-                "task_name": self.name,
-                "correlation_id": correlation_id,
-                "error": str(exc),
-                "error_type": type(exc).__name__,
-                "retries": self.request.retries,
-            },
-            exc_info=True,
-        )
-        sentry_sdk.capture_exception(exc)
+1. Build cache key: `booking:${destId}:${checkin}:${checkout}:${adults}:${rooms}`
+2. Check Redis — if hit, return cached array (TTL: 15 minutes)
+3. If miss: call RapidAPI Booking.com endpoint:
+   - `GET https://booking-com15.p.rapidapi.com/api/v1/hotels/searchHotels`
+   - Headers: `x-rapidapi-host: config.RAPIDAPI_BOOKING_HOST`
+   - Query params: `dest_id`, `search_type: 'CITY'`, `adults`, `room_qty`, `checkin_date`, `checkout_date`, `currency_code`, `languagecode: 'en-us'`, `units: 'metric'`
+4. Map each hotel in `response.data.data.hotels` to `PropertySchema`:
+   - `id`: `hotel.hotel_id.toString()`
+   - `platform`: `'booking'`
+   - `name`: `hotel.property.name`
+   - `imageUrls`: `[hotel.property.photoUrls[0]]` (first photo only to reduce payload)
+   - `pricePerNight`: `hotel.property.priceBreakdown.grossPrice.value`
+   - `currency`: `hotel.property.priceBreakdown.grossPrice.currency`
+   - `totalPrice`: `hotel.property.priceBreakdown.grossPrice.value * nights`
+   - `rating`: `hotel.property.reviewScore ?? null`
+   - `reviewCount`: `hotel.property.reviewCount ?? null`
+   - `lat`: `hotel.property.latitude`
+   - `lng`: `hotel.property.longitude`
+   - `address`: `hotel.property.wishlistName ?? ''`
+   - `bookingUrl`: `'https://www.booking.com/hotel/' + hotel.hotel_id`
+   - All other fields: `null`
+5. Store in Redis with 15-minute TTL
+6. Return normalized array
+7. On API error: log with Pino, return empty array (do not throw — let Airbnb results still show)
 
-    def on_retry(self, exc, task_id, args, kwargs, einfo):
-        logger.warning(
-            "task_retrying",
-            extra={
-                "task_id": task_id,
-                "task_name": self.name,
-                "retry_count": self.request.retries,
-                "error": str(exc),
-                "next_retry_delay": self.default_retry_delay * (2 ** self.request.retries),
-            }
-        )
+### 3.4 — Airbnb Service (RapidAPI)
 
-    def on_success(self, retval, task_id, args, kwargs):
-        logger.info(
-            "task_succeeded",
-            extra={"task_id": task_id, "task_name": self.name}
-        )
+Build `backend/src/services/airbnbService.ts`:
+
+Function `searchProperties(params: { location: string, checkin: string, checkout: string, adults: number, currency: string })`:
+
+1. Build cache key: `airbnb:${location}:${checkin}:${checkout}:${adults}`
+2. Check Redis — if hit, return cached array (TTL: 15 minutes)
+3. If miss: call RapidAPI Airbnb endpoint:
+   - Find the correct search endpoint from the subscribed Airbnb RapidAPI provider (check the API docs tab on RapidAPI for the exact path — common: `GET /api/v1/searchPropertyByLocation` or `/search-results`)
+   - Headers: `x-rapidapi-host: config.RAPIDAPI_AIRBNB_HOST`
+   - Query params: `location`, `checkin`, `checkout`, `adults`, `currency`
+4. Map each listing to `PropertySchema`:
+   - `id`: listing's unique id as string
+   - `platform`: `'airbnb'`
+   - `name`: listing name/title
+   - `imageUrls`: first photo URL
+   - `pricePerNight`: nightly price value
+   - `currency`: currency code
+   - `totalPrice`: total price if returned, else `pricePerNight * nights`
+   - `rating`: rating value or `null`
+   - `reviewCount`: review count or `null`
+   - `lat`: latitude (if returned — Airbnb APIs often omit this, set `0` as fallback)
+   - `lng`: longitude (if returned — set `0` as fallback)
+   - `address`: city/location string
+   - `bookingUrl`: direct listing URL
+   - All other fields: `null`
+5. Store in Redis with 15-minute TTL
+6. Return normalized array
+7. On API error: log with Pino, return empty array (do not throw)
+
+**Note to AI:** The exact Airbnb RapidAPI response shape depends on which provider is subscribed. Inspect the actual API response structure from RapidAPI's "Test Endpoint" tab before mapping fields. Never guess field names — log the raw response on first run and map from actual data.
+
+### 3.5 — Properties Route
+
+Build `backend/src/routes/properties.ts`:
+
+`GET /api/v1/properties/search` (protected):
+- Query params: `destination` (string), `destId` (string — Booking.com city ID), `checkin` (YYYY-MM-DD), `checkout` (YYYY-MM-DD), `guests` (number), `currency` (string, default `'USD'`)
+- Validate all params with Zod — return 400 if invalid
+- Run both searches in parallel: `Promise.allSettled([bookingService.searchProperties(...), airbnbService.searchProperties(...)])`
+- Collect results from both — fulfilled results are included, rejected results are ignored
+- Merge arrays, deduplicate by `id`, sort by `rating DESC`
+- Return: `{ properties: Property[], sources: { booking: number, airbnb: number }, cached: boolean, count: number }`
+
+---
+
+## PHASE 4 — ACTIVITY DISCOVERY [AI]
+
+### 4.1 — Activity Zod Schema
+
+Build `backend/src/schemas/activity.ts`:
+
+```ts
+export const ActivitySchema = z.object({
+  id: z.string(),
+  placeId: z.string(),
+  name: z.string(),
+  category: z.string(),
+  rating: z.number().nullable(),
+  reviewCount: z.number().nullable(),
+  priceLevel: z.number().nullable(),
+  address: z.string(),
+  lat: z.number(),
+  lng: z.number(),
+  openingHours: z.array(z.string()).nullable(),
+  phoneNumber: z.string().nullable(),
+  website: z.string().nullable(),
+  bookingUrl: z.string().nullable(),
+  photoUrls: z.array(z.string()),
+})
+export type Activity = z.infer<typeof ActivitySchema>
 ```
 
-### 5.3 Task Implementation Example
+### 4.2 — Places Service
 
+Build `backend/src/services/placesService.ts`:
+
+Function `searchActivities(params: { lat: number, lng: number, radius: number })`:
+
+1. Build cache key: `activities:${lat.toFixed(2)}:${lng.toFixed(2)}:${radius}`
+2. Check Redis — if hit, return cached (TTL: 24 hours)
+3. If miss: call Google Places API (New) `POST /v1/places:searchNearby`
+   - Include fields mask: `places.id,places.displayName,places.rating,places.userRatingCount,places.priceLevel,places.formattedAddress,places.location,places.currentOpeningHours,places.internationalPhoneNumber,places.websiteUri,places.photos,places.primaryType`
+   - Types: `tourist_attraction`, `museum`, `park`, `restaurant`, `bar`, `night_club`, `spa`, `amusement_park`
+4. Map each place to `ActivitySchema`
+5. Store in Redis with 24-hour TTL
+6. Return normalized array
+
+### 4.3 — Activities Route
+
+Build `backend/src/routes/activities.ts`:
+
+`GET /api/v1/activities/search` (protected):
+- Query params: `lat` (number), `lng` (number), `radius` (number, default 5000)
+- Validate with Zod
+- Call `placesService.searchActivities(params)`
+- Return: `{ activities: Activity[], cached: boolean, count: number }`
+
+---
+
+## PHASE 5 — AI SERVICE [AI]
+
+### 5.1 — Python Setup
+
+Create `ai-service/requirements.txt`:
+
+```txt
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+pydantic-settings==2.2.1
+python-dotenv==1.0.1
+openai==1.35.0
+sentry-sdk[fastapi]==2.4.0
+httpx==0.27.0
+```
+
+**Note:** NVIDIA NIM is OpenAI API-compatible. Use the `openai` Python SDK with `base_url` set to `https://integrate.api.nvidia.com/v1` and `api_key` set to `NVIDIA_API_KEY`. No separate NVIDIA SDK needed.
+
+### 5.2 — AI Service Config
+
+Build `ai-service/app/config.py`:
+- Pydantic Settings class loading all env vars
+- Required: `NVIDIA_API_KEY`
+- Export `get_settings()` with `lru_cache`
+
+### 5.3 — AI Service Main
+
+Build `ai-service/app/main.py`:
+- FastAPI app with title `Retreat AI Service`
+- Add CORS: allow all origins for internal use only
+- Init Sentry with `AI_SENTRY_DSN` in production
+- Register routers: `/plan` and `/message`
+- Add `GET /health` returning `{ "status": "ok" }`
+
+### 5.4 — Trip Planner Service
+
+Build `ai-service/app/services/planner.py`:
+
+Function `generate_itinerary(destination, checkin, checkout, guests, properties, activities)`:
+
+Initialize the client at module level:
 ```python
-# app/workers/tasks/accommodation_tasks.py
-import logging
-from celery.exceptions import SoftTimeLimitExceeded
-from app.workers.celery_app import celery_app
-from app.workers.base_task import SafeBaseTask
-from app.services.accommodation_service import AccommodationService
-
-logger = logging.getLogger("tasks.accommodation")
-
-@celery_app.task(
-    bind=True,
-    base=SafeBaseTask,
-    queue="accommodation_queue",
-    name="tasks.accommodation.fetch",
-    max_retries=5,
+from openai import OpenAI
+client = OpenAI(
+    base_url="https://integrate.api.nvidia.com/v1",
+    api_key=get_settings().NVIDIA_API_KEY
 )
-def fetch_accommodations(self, trip_id: str, destination: str, check_in: str, check_out: str):
-    """
-    Fetches and normalizes accommodations for a trip.
-    Retries with exponential backoff on API failures.
-    """
-    try:
-        logger.info(f"Fetching accommodations for trip {trip_id}, destination: {destination}")
-        service = AccommodationService()
-        results = service.fetch_all_providers(
-            destination=destination,
-            check_in=check_in,
-            check_out=check_out,
-        )
-        service.normalize_and_store(trip_id=trip_id, raw_results=results)
-        logger.info(f"Accommodations fetched for trip {trip_id}: {len(results)} results")
-        return {"status": "success", "count": len(results)}
-
-    except SoftTimeLimitExceeded:
-        logger.error(f"Task timed out for trip {trip_id}. Aborting gracefully.")
-        raise  # Do not retry on timeout
-
-    except Exception as exc:
-        backoff = 60 * (2 ** self.request.retries)
-        logger.warning(f"Accommodation fetch failed for trip {trip_id}. Retry {self.request.retries}. Backoff: {backoff}s")
-        raise self.retry(exc=exc, countdown=backoff)
+MODEL = "meta/llama-3.1-70b-instruct"
 ```
 
-### 5.4 Queue Health Checks
+The function calls the NVIDIA NIM API with this exact prompt structure:
 
 ```python
-# app/utils/queue_health.py
-import logging
-from redis import Redis
-from app.config import get_settings
+SYSTEM_PROMPT = """You are a professional trip planner. Your output must be valid JSON matching the schema exactly.
+Do not add commentary, explanations, or markdown. Only output the JSON object.
+Never invent property IDs or activity IDs that were not in the input data.
+Only reference properties and activities that exist in the provided lists."""
 
-settings = get_settings()
-logger = logging.getLogger("queue.health")
+USER_PROMPT = f"""Plan a trip to {destination} from {checkin} to {checkout} for {guests} guests.
 
-QUEUE_DEPTH_ALERT_THRESHOLD = 500   # Alert if any queue exceeds this depth
+Available properties (use their exact IDs):
+{json.dumps(properties[:10], indent=2)}
 
-MONITORED_QUEUES = [
-    "accommodation_queue",
-    "activity_queue",
-    "restaurant_queue",
-    "weather_queue",
-    "itinerary_queue",
-    "inquiry_queue",
-    "dead_letter_queue",
+Available activities (use their exact IDs):
+{json.dumps(activities[:20], indent=2)}
+
+Return a JSON object with this exact schema:
+{{
+  "summary": "2-3 sentence trip overview",
+  "recommended_property_ids": ["id1", "id2", "id3"],
+  "days": [
+    {{
+      "day": 1,
+      "date": "YYYY-MM-DD",
+      "theme": "short theme name",
+      "morning": {{ "activity_id": "id", "note": "why this activity" }},
+      "afternoon": {{ "activity_id": "id", "note": "why this activity" }},
+      "evening": {{ "activity_id": "id", "note": "why this activity" }},
+      "meal_suggestion": "brief meal recommendation"
+    }}
+  ],
+  "tips": ["tip1", "tip2", "tip3"]
+}}"""
+```
+
+- Call `client.chat.completions.create(model=MODEL, messages=[{"role":"system","content":SYSTEM_PROMPT},{"role":"user","content":USER_PROMPT}], max_tokens=4096, temperature=0.3)`
+- Use `temperature=0.3` — low temperature reduces hallucination on structured JSON output
+- Parse `response.choices[0].message.content` as JSON
+- Validate against the expected schema using Pydantic
+- If JSON parse fails: retry once with an added instruction "Output only the JSON object, no other text". If second attempt fails: raise HTTPException 500
+
+### 5.5 — Message Composer Service
+
+Build `ai-service/app/services/composer.py`:
+
+Function `draft_inquiry_message(property_name, property_address, checkin, checkout, guests, user_name)`:
+
+Use the same `client` and `MODEL` initialized in `planner.py` (import from shared module or re-initialize with the same pattern).
+
+System prompt:
+```python
+SYSTEM_PROMPT = """You draft short, polite WhatsApp messages from travelers to property hosts.
+Rules:
+- Maximum 200 words
+- No markdown formatting (no bold, no bullets)
+- Friendly and professional tone
+- Ask about: availability, any additional fees, check-in process
+- Sign off with the traveler's name
+- Output only the message text, nothing else"""
+```
+
+- Call `client.chat.completions.create(model=MODEL, messages=[...], max_tokens=500, temperature=0.5)`
+- Return `response.choices[0].message.content.strip()` as plain string
+- This is a simple string return, not JSON
+
+### 5.6 — Plan Router
+
+Build `ai-service/app/routers/plan.py`:
+
+`POST /plan`:
+- Body: `{ destination, checkin, checkout, guests, properties: Property[], activities: Activity[] }`
+- Validate with Pydantic
+- Call `planner.generate_itinerary(...)`
+- Return the itinerary object
+
+### 5.7 — Message Router
+
+Build `ai-service/app/routers/message.py`:
+
+`POST /message`:
+- Body: `{ property_name, property_address, checkin, checkout, guests, user_name }`
+- Call `composer.draft_inquiry_message(...)`
+- Return: `{ message: string }`
+
+---
+
+## PHASE 6 — TRIP MANAGEMENT [AI]
+
+### 6.1 — Trip Routes
+
+Build `backend/src/routes/trips.ts` (all protected):
+
+`POST /api/v1/trips`:
+- Body: `{ destination, destination_lat, destination_lng, checkin, checkout, guests }`
+- Validate with Zod
+- Insert into `trips` table
+- Return the created trip object
+
+`GET /api/v1/trips`:
+- Returns all trips for the authenticated user, ordered by `created_at DESC`
+
+`GET /api/v1/trips/:tripId`:
+- Returns the trip with `id = tripId` and `user_id = request.user.id`
+- Returns 404 if not found
+
+`POST /api/v1/trips/:tripId/itinerary`:
+- Fetches properties and activities from their respective services (with caching)
+- POSTs to `AI_SERVICE_URL/plan` with the data
+- Saves the returned itinerary as `itinerary` JSONB on the trip row
+- Returns the updated trip
+
+---
+
+## PHASE 7 — INQUIRY WORKFLOW [AI]
+
+This is the hero feature. Implement it exactly as described.
+
+### 7.1 — Inquiry Route
+
+Build `backend/src/routes/inquiries.ts` (protected):
+
+`POST /api/v1/inquiries`:
+- Body: `{ tripId, propertyId, platform, propertySnapshot: Property, hostPhone?: string }`
+- Validate that the trip belongs to `request.user.id` — return 403 if not
+- Check rate limit: max 10 inquiries per user per day (Redis key: `inquiry_limit:${userId}:${today}`)
+- Call AI service `POST /message` to get draft message
+- Build the `wa.me` deep link:
+  - If `hostPhone` is provided: `https://wa.me/${hostPhone}?text=${encodeURIComponent(aiMessage)}`
+  - If no `hostPhone`: `waLink = null` (frontend will show "Copy Message" instead)
+- Insert inquiry row into DB with `status: 'draft'`, `ai_message`, `final_message: ai_message`, `wa_link`
+- **Do not enqueue any QStash job** — there is no background send. The user sends it themselves via the link.
+- Return: `{ inquiry: { id, ai_message, wa_link, status: 'draft' } }`
+
+`GET /api/v1/inquiries`:
+- Returns all inquiries for the user, ordered by `created_at DESC`
+
+`PATCH /api/v1/inquiries/:id/message`:
+- Body: `{ final_message: string }`
+- Updates `final_message` and regenerates `wa_link` with the new message text
+- Returns updated inquiry with new `wa_link`
+
+`PATCH /api/v1/inquiries/:id/sent`:
+- Body: none — called by frontend when user confirms they tapped Send in WhatsApp
+- Updates inquiry `status = 'sent'`, `sent_at = now()`
+- Returns updated inquiry
+
+### 7.2 — WhatsApp Link Service
+
+Build `backend/src/services/whatsappService.ts`:
+
+Function `buildWaLink(hostPhone: string | null, messageText: string): string | null`:
+- If `hostPhone` is null or empty: return `null`
+- Sanitize `hostPhone`: strip spaces, dashes, parentheses. Ensure it starts with country code (e.g. `+923001234567` → `923001234567`)
+- Return `https://wa.me/${sanitizedPhone}?text=${encodeURIComponent(messageText)}`
+
+Function `buildWaCopyFallback(messageText: string): string`:
+- Returns the plain message text for clipboard copy when no phone number is available
+
+**No API calls. No credentials. No external dependencies.** This service is pure string manipulation.
+
+### 7.3 — QStash Service (for future async jobs only)
+
+Build `backend/src/services/qstashService.ts`:
+
+The QStash integration remains in the codebase for any future background jobs (e.g. sending reminder emails, pre-caching popular destinations). For now it has one utility function:
+
+Function `enqueueJob(destination: string, body: object, delaySeconds?: number)`:
+- Use `@upstash/qstash` Client to publish a message
+- Destination: the worker endpoint URL
+- Return the QStash message ID
+- This function is not called by the inquiry flow — reserved for future use
+
+---
+
+## PHASE 8 — FRONTEND [AI]
+
+This is the most important phase. The frontend must be visually stunning, dark-themed, animated, and reactive. Apply every rule from the FRAMER MOTION RULES section.
+
+### 8.1 — Initialize Next.js Project
+
+Create `frontend/` with Next.js 15 App Router:
+
+```json
+dependencies: [
+  "next@15",
+  "@supabase/supabase-js@2",
+  "@supabase/auth-helpers-nextjs",
+  "framer-motion@11",
+  "@tanstack/react-query@5",
+  "zustand@5",
+  "leaflet",
+  "react-leaflet",
+  "@types/leaflet",
+  "zod@3",
+  "react-hook-form",
+  "@hookform/resolvers",
+  "axios",
+  "@radix-ui/react-dialog",
+  "@radix-ui/react-popover",
+  "@radix-ui/react-select",
+  "class-variance-authority",
+  "clsx",
+  "tailwind-merge",
+  "date-fns",
+  "lucide-react",
+  "@sentry/nextjs@8"
 ]
-
-def check_queue_depths():
-    """
-    Called every 5 minutes by Celery Beat.
-    Logs queue depths and alerts on threshold breaches.
-    """
-    r = Redis.from_url(settings.celery_broker_url)
-    depths = {}
-
-    for queue in MONITORED_QUEUES:
-        try:
-            depth = r.llen(queue)
-            depths[queue] = depth
-            if depth > QUEUE_DEPTH_ALERT_THRESHOLD:
-                logger.warning(
-                    "QUEUE_DEPTH_ALERT",
-                    extra={"queue": queue, "depth": depth, "threshold": QUEUE_DEPTH_ALERT_THRESHOLD}
-                )
-        except Exception as e:
-            logger.error(f"Cannot read queue depth for {queue}: {e}")
-
-    logger.info("queue_depths", extra=depths)
-
-    # Dead letter queue — anything here requires immediate attention
-    dlq_depth = depths.get("dead_letter_queue", 0)
-    if dlq_depth > 0:
-        logger.error(
-            "DEAD_LETTER_QUEUE_NOT_EMPTY",
-            extra={"dead_letter_queue_depth": dlq_depth}
-        )
-    return depths
 ```
 
-### 5.5 Celery Beat — Scheduled Tasks
+### 8.2 — Root Layout
 
-```python
-# app/workers/beat_schedule.py
-from celery.schedules import crontab
-from app.workers.celery_app import celery_app
+Build `frontend/app/layout.tsx`:
+- Font: Inter (body), Syne (headings) — both via `next/font/google`
+- Background: `#0F0E17` (brand.dark)
+- Wrap children with: `QueryClientProvider`, `AuthProvider` (custom, wraps Supabase session)
+- Apply `<AnimatePresence mode="wait">` around `{children}`
+- Include `<Navbar />` on all pages except the landing page
 
-celery_app.conf.beat_schedule = {
-    # System health
-    "queue-depth-check": {
-        "task": "tasks.monitoring.check_queue_depths",
-        "schedule": 300.0,  # Every 5 minutes
-    },
-    "db-pool-status-log": {
-        "task": "tasks.monitoring.log_db_pool_status",
-        "schedule": 600.0,  # Every 10 minutes
-    },
-    # Cache maintenance
-    "cache-warm-popular-destinations": {
-        "task": "tasks.cache.warm_popular_destinations",
-        "schedule": crontab(hour=4, minute=0),  # Daily at 4 AM UTC
-    },
-    # Weather refresh for active trips
-    "refresh-active-trip-weather": {
-        "task": "tasks.weather.refresh_active_trips",
-        "schedule": crontab(minute=0),  # Every hour
-    },
-    # Clean up stale sessions
-    "cleanup-abandoned-trips": {
-        "task": "tasks.trips.cleanup_abandoned",
-        "schedule": crontab(hour=2, minute=0),  # Daily at 2 AM UTC
-    },
+### 8.3 — Landing Page
+
+Build `frontend/app/page.tsx`:
+
+Layout: full-viewport dark hero. Must include:
+- `<FloatingOrbs />` — 3 blurred gradient circles positioned absolutely, animated with infinite `x/y` motion (colors: brand.primary, brand.secondary, brand.teal at 15% opacity)
+- Large headline: "Plan less. **Retreat** more." — "Retreat" in gradient text (`from-brand-primary to-brand-secondary`)
+- Subheadline: "AI-powered trip planning. Smart booking automation."
+- "Continue with Google" button — uses Supabase OAuth, `whileTap={{ scale: 0.95 }}`, gradient background
+- The entire hero entrance animates in: headline first (`delay: 0.2`), subheadline (`delay: 0.4`), button (`delay: 0.6`)
+
+### 8.4 — Dashboard Page
+
+Build `frontend/app/dashboard/page.tsx`:
+
+Sections:
+1. **Top greeting bar** — "Good morning, [name]" with current date
+2. **Stats banner** — 3 animated counters: `trips planned`, `inquiries sent`, `destinations explored`. Numbers animate from 0 on mount using Framer Motion `animate()`
+3. **Search form** (`<SearchForm />`) — destination input + date range picker + guest count selector. On submit: navigates to `/trip/new?...` with params
+4. **My Trips grid** — staggered `<TripCard />` components for past trips
+
+`<SearchForm />`:
+- Glassmorphism card: `background: rgba(255,255,255,0.04)`, `border: 1px solid rgba(255,255,255,0.08)`, `backdrop-filter: blur(12px)`, `border-radius: 20px`
+- Destination input with Nominatim autocomplete — on user typing (300ms debounce), call `GET https://nominatim.openstreetmap.org/search?q={query}&format=json&limit=5` and show a dropdown of results. On select: store `display_name`, `lat`, `lon` in form state. No API key needed.
+- Date range picker (checkin / checkout)
+- Guest count stepper (+/-)
+- Submit button: gradient `brand.primary → brand.secondary`, full width
+
+`<TripCard />`:
+- Card background: `brand.card` (`#1A1826`)
+- Destination name in Syne font, bold
+- Dates, status badge (`<StatusBadge />`)
+- Hover animation per FRAMER MOTION RULES
+
+### 8.5 — Trip Detail Page
+
+Build `frontend/app/trip/[tripId]/page.tsx`:
+
+Three-column layout on desktop, stacked on mobile:
+
+**Left column (35%):**
+- `<PropertyStack />` — the swipeable card stack
+- Shows properties one at a time
+- Bottom row: ❌ (Not Interested) and ❤️ (Interested) buttons
+- Swipe left/right animations per FRAMER MOTION RULES
+
+**Middle column (40%):**
+- `<ItineraryPanel />` — AI-generated itinerary
+- Each day as a card (`<ItineraryDay />`)
+- Days stagger in from left on mount
+- Activity chips with icons (morning ☀️, afternoon 🌤️, evening 🌙)
+- "Generate Itinerary" button triggers AI planning — shows streaming skeleton while loading
+
+**Right column (25%):**
+- `<MapView />` — Leaflet map with OpenStreetMap tiles
+- Shows pins for all properties and activities
+- Property pins: custom icon in `brand.primary` color
+- Activity pins: custom icon in `brand.secondary` color
+- Clicking a pin shows a Leaflet popup with name + rating
+- Map must be loaded with `dynamic(() => import('../trip/MapView'), { ssr: false })` — Leaflet does not support SSR. This is non-negotiable; skipping it causes a build crash.
+
+### 8.6 — Property Card Component
+
+Build `frontend/components/trip/PropertyCard.tsx`:
+
+This is the most animated component in the app:
+- Dark card, `border-radius: 20px`
+- Full-bleed hero image (top 60% of card)
+- Property name in Syne font
+- Price per night — large, `brand.accent` color
+- Rating stars + review count
+- Amenity chips (first 4, rest hidden)
+- "View on Booking.com" external link
+- Drag gesture: `useDragControls` + `useMotionValue` for x position
+- As user drags right: card tints green, ❤️ icon fades in at scale
+- As user drags left: card tints red, ❌ icon fades in at scale
+- On release past threshold (120px): trigger the swipe-out animation
+
+### 8.7 — Inquiry Modal
+
+Build `frontend/components/trip/InquiryModal.tsx`:
+
+Triggered when user taps "Interested":
+- Modal slides up from bottom with spring animation
+- Shows the AI-drafted WhatsApp message in an editable `<textarea>`
+- "Edit" icon toggles textarea between read-only and editable
+- When user edits and stops typing (500ms debounce): call `PATCH /inquiries/:id/message` to save and get updated `wa_link`
+- Two action buttons at the bottom:
+  - **If `wa_link` exists:** "Open in WhatsApp" button (green, WhatsApp icon) — `window.open(wa_link, '_blank')`. After user taps: call `PATCH /inquiries/:id/sent` to mark as sent. Show "✓ Sent" with teal checkmark animation.
+  - **If no `wa_link`:** "Copy Message" button — copies `final_message` to clipboard + "View Listing" button opens the property `bookingUrl`. Show "✓ Copied" with animation. Call `PATCH /inquiries/:id/sent` when user copies.
+- "Cancel" — dismisses modal, inquiry stays in DB as `draft`
+- Note in modal footer: "This message will be sent from your WhatsApp account"
+
+### 8.8 — Global State
+
+Build `frontend/lib/store.ts` with Zustand:
+
+```ts
+interface ReturnState {
+  // Search params
+  searchParams: { destination: string, lat: number, lng: number, checkin: string, checkout: string, guests: number } | null
+  setSearchParams: (params: ...) => void
+
+  // Current trip
+  currentTrip: Trip | null
+  setCurrentTrip: (trip: Trip | null) => void
+
+  // Property swipe state
+  swipedPropertyIds: Set<string>
+  interestedPropertyIds: Set<string>
+  markInterested: (id: string) => void
+  markSkipped: (id: string) => void
+
+  // UI state
+  mapSelectedId: string | null
+  setMapSelectedId: (id: string | null) => void
 }
 ```
 
----
+### 8.9 — API Client
 
-## 6. Cache Management
-
-### 6.1 Redis Client Setup
-
-Two logical Redis databases are used to cleanly separate concerns:
-
-| Redis DB | Purpose |
-|---|---|
-| DB 0 | Default/general |
-| DB 1 | Application cache (TTL-based data) |
-| DB 2 | Celery broker (task queue) |
-| DB 3 | Celery results backend |
-
-```python
-# app/cache/redis_client.py
-import logging
-from redis.asyncio import Redis, ConnectionPool
-from app.config import get_settings
-
-settings = get_settings()
-logger = logging.getLogger("cache.redis")
-
-_redis_pool: ConnectionPool | None = None
-_redis: Redis | None = None
-
-async def init_redis():
-    global _redis_pool, _redis
-    _redis_pool = ConnectionPool.from_url(
-        settings.redis_url,
-        db=settings.redis_cache_db,
-        max_connections=settings.redis_max_connections,
-        decode_responses=True,
-        socket_connect_timeout=5,
-        socket_timeout=5,
-        retry_on_timeout=True,
-    )
-    _redis = Redis(connection_pool=_redis_pool)
-
-    try:
-        await _redis.ping()
-        logger.info("Redis cache connected.")
-    except Exception as e:
-        logger.critical(f"CRITICAL: Redis connection failed on startup: {e}")
-        raise
-
-async def close_redis():
-    if _redis:
-        await _redis.close()
-
-async def get_redis() -> Redis:
-    if _redis is None:
-        raise RuntimeError("Redis not initialized. Call init_redis() at startup.")
-    return _redis
-```
-
-### 6.2 Cache Strategy Definitions
-
-All cache TTLs are defined in one place. Never hardcode TTL values in service code.
-
-```python
-# app/cache/strategies.py
-from dataclasses import dataclass
-
-@dataclass(frozen=True)
-class CacheTTL:
-    seconds: int
-
-    @classmethod
-    def minutes(cls, n: int) -> "CacheTTL":
-        return cls(n * 60)
-
-    @classmethod
-    def hours(cls, n: int) -> "CacheTTL":
-        return cls(n * 3600)
-
-    @classmethod
-    def days(cls, n: int) -> "CacheTTL":
-        return cls(n * 86400)
-
-# ─── TTL Definitions ─────────────────────────────────────────────────────────
-class CacheStrategy:
-    # Accommodation listings: refreshed frequently (prices change)
-    ACCOMMODATION_SEARCH   = CacheTTL.minutes(30)
-
-    # Activities: stable data, longer TTL
-    ACTIVITY_SEARCH        = CacheTTL.hours(6)
-
-    # Restaurants: moderately stable
-    RESTAURANT_SEARCH      = CacheTTL.hours(3)
-
-    # Weather: short TTL, data changes frequently
-    WEATHER_FORECAST       = CacheTTL.hours(1)
-
-    # Generated itinerary: cache per user session
-    ITINERARY_GENERATED    = CacheTTL.hours(24)
-
-    # AI scoring results: expensive to compute, stable enough to cache
-    AI_ACCOMMODATION_SCORE = CacheTTL.hours(12)
-
-    # Route calculations: very stable
-    ROUTE_CALCULATION      = CacheTTL.days(1)
-
-    # User session data
-    USER_SESSION           = CacheTTL.minutes(60)
-```
-
-### 6.3 Cache Service with Safe Patterns
-
-```python
-# app/cache/cache_service.py
-import json
-import logging
-import hashlib
-from redis.asyncio import Redis
-from app.cache.strategies import CacheTTL
-
-logger = logging.getLogger("cache")
-
-class CacheService:
-    def __init__(self, redis: Redis):
-        self.redis = redis
-
-    def _build_key(self, namespace: str, **params) -> str:
-        """Deterministic, collision-safe cache key from namespace + params."""
-        param_hash = hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()[:12]
-        return f"{namespace}:{param_hash}"
-
-    async def get(self, key: str) -> dict | None:
-        try:
-            raw = await self.redis.get(key)
-            if raw:
-                logger.debug(f"Cache HIT: {key}")
-                return json.loads(raw)
-            logger.debug(f"Cache MISS: {key}")
-            return None
-        except Exception as e:
-            logger.error(f"Cache GET error for key '{key}': {e}")
-            return None  # Gracefully degrade — never crash on cache failure
-
-    async def set(self, key: str, value: dict, ttl: CacheTTL) -> bool:
-        try:
-            await self.redis.setex(key, ttl.seconds, json.dumps(value))
-            logger.debug(f"Cache SET: {key} (TTL: {ttl.seconds}s)")
-            return True
-        except Exception as e:
-            logger.error(f"Cache SET error for key '{key}': {e}")
-            return False
-
-    async def delete(self, key: str) -> bool:
-        try:
-            await self.redis.delete(key)
-            logger.info(f"Cache INVALIDATED: {key}")
-            return True
-        except Exception as e:
-            logger.error(f"Cache DELETE error for key '{key}': {e}")
-            return False
-
-    async def invalidate_namespace(self, namespace: str):
-        """Invalidate all cache keys under a namespace (e.g., on data update)."""
-        try:
-            pattern = f"{namespace}:*"
-            keys = await self.redis.keys(pattern)
-            if keys:
-                await self.redis.delete(*keys)
-                logger.info(f"Cache namespace INVALIDATED: {namespace} ({len(keys)} keys)")
-        except Exception as e:
-            logger.error(f"Cache namespace invalidation failed for '{namespace}': {e}")
-
-    async def get_or_set(self, key: str, fetch_fn, ttl: CacheTTL) -> dict | None:
-        """
-        Cache-aside pattern with graceful degradation.
-        If cache fails, fetch from source and return without caching.
-        """
-        cached = await self.get(key)
-        if cached is not None:
-            return cached
-        try:
-            fresh = await fetch_fn()
-            await self.set(key, fresh, ttl)
-            return fresh
-        except Exception as e:
-            logger.error(f"Cache fetch_fn failed for key '{key}': {e}")
-            raise
-```
-
-### 6.4 Cache Invalidation Rules
-
-| Event | Cache Keys Invalidated |
-|---|---|
-| Accommodation data updated | `accommodation:{id}:*` |
-| Trip preferences changed | `itinerary:{trip_id}:*`, `ai_score:{trip_id}:*` |
-| Weather data refreshed | `weather:{destination}:*` |
-| User session expired | `user:{user_id}:session` |
-| Itinerary regenerated | `itinerary:{trip_id}:generated` |
+Build `frontend/lib/api.ts`:
+- Create an Axios instance with `baseURL: NEXT_PUBLIC_API_URL`
+- Add request interceptor: attaches `Authorization: Bearer ${supabaseSession.access_token}` to every request
+- Add response interceptor: on 401, calls `supabase.auth.signOut()` and redirects to `/`
+- Export typed functions for every backend endpoint (no raw Axios calls outside this file)
 
 ---
 
-## 7. AI Orchestration Layer
+## PHASE 9 — LOGGING & OBSERVABILITY [AI]
 
-### 7.1 LangGraph Agent Architecture
+### 9.1 — Request Logger Middleware
 
-All AI planning runs through a deterministic LangGraph state machine — never free-form LLM calls in isolation.
+Build `backend/src/middleware/requestLogger.ts`:
 
-```
-[User Preferences]
-       │
-       ▼
-PreferenceExtractionAgent
-       │
-       ▼
-AccommodationRankingAgent ──► AccommodationScores
-       │
-       ▼
-ActivityIntelligenceAgent ──► ClusteredActivities
-       │
-       ▼
-DiningIntelligenceAgent ──► MealPlan
-       │
-       ▼
-LogisticsOptimizationAgent ──► OptimizedSchedule
-       │
-       ▼
-BudgetOptimizationAgent ──► BudgetValidatedPlan
-       │
-       ▼
-AIRefinementAgent ──► FinalItinerary (Structured JSON)
-       │
-       ▼
-StructuredOutputValidator ──► Validated + Stored
+Fastify `onRequest` + `onResponse` hooks:
+- Generate a UUID `requestId` on each request
+- Attach to `request.requestId`
+- Log on request: `{ requestId, method, url, userAgent }`
+- Log on response: `{ requestId, method, url, statusCode, responseTimeMs }`
+- Return `X-Request-ID` header on all responses
+
+### 9.2 — Structured Log Fields
+
+Every Pino log call in routes and services must include:
+- `requestId` — from request context
+- `userId` — from `request.user.id` when available
+- `service` — name of the service (e.g., `bookingService`, `placesService`)
+
+Logs to implement in every route:
+```ts
+logger.info({ requestId, userId, service: 'propertiesRoute' }, 'properties_search_started')
+logger.info({ requestId, userId, service: 'propertiesRoute', count, cached }, 'properties_search_completed')
+logger.error({ requestId, userId, service: 'propertiesRoute', err }, 'properties_search_failed')
 ```
 
-### 7.2 Structured Output Enforcement
+### 9.3 — Sentry Setup
 
-**RULE:** Every AI response is validated against a Pydantic schema. Raw text responses from the AI layer are never stored or served to users.
+Backend `src/plugins/sentry.ts`:
+- Init Sentry with `SENTRY_DSN`, `environment: NODE_ENV`, `tracesSampleRate: 0.1`
+- Add Fastify integration: `Sentry.setupFastifyErrorHandler(app)`
 
-```python
-# app/schemas/itinerary_schemas.py
-from pydantic import BaseModel, Field, field_validator
-from typing import Literal
-from datetime import time
+Frontend: run `npx @sentry/wizard@latest -i nextjs` during setup, which creates `sentry.client.config.ts`, `sentry.server.config.ts`, and `sentry.edge.config.ts` automatically. Do not write these manually.
 
-class ItineraryItem(BaseModel):
-    name: str = Field(..., min_length=1, max_length=200)
-    item_type: Literal["activity", "restaurant", "transport", "accommodation", "free_time"]
-    start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
-    end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
-    location_name: str
-    estimated_cost_usd: float = Field(..., ge=0)
-    notes: str | None = None
+### 9.4 — Health Endpoint
 
-    @field_validator("end_time")
-    @classmethod
-    def end_after_start(cls, v, values):
-        if "start_time" in values.data and v <= values.data["start_time"]:
-            raise ValueError("end_time must be after start_time")
-        return v
-
-class ItineraryDay(BaseModel):
-    day_number: int = Field(..., ge=1, le=30)
-    date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
-    items: list[ItineraryItem] = Field(..., min_length=1)
-    total_estimated_cost_usd: float = Field(..., ge=0)
-    weather_summary: str | None = None
-
-class GeneratedItinerary(BaseModel):
-    trip_id: str
-    days: list[ItineraryDay] = Field(..., min_length=1)
-    total_estimated_cost_usd: float
-    budget_remaining_usd: float
-    planning_notes: str | None = None
-```
-
-```python
-# app/ai/validators.py
-import logging
-from pydantic import ValidationError
-from app.schemas.itinerary_schemas import GeneratedItinerary
-import sentry_sdk
-
-logger = logging.getLogger("ai.validator")
-
-def validate_itinerary_output(raw_output: dict) -> GeneratedItinerary:
-    """
-    Validates AI-generated itinerary against the schema.
-    On failure: logs, captures to Sentry, raises ValueError.
-    Never allow malformed AI output into the system.
-    """
-    try:
-        validated = GeneratedItinerary(**raw_output)
-        logger.info(f"AI output validated for trip {validated.trip_id}.")
-        return validated
-    except ValidationError as e:
-        logger.error(
-            "ai_output_validation_failed",
-            extra={"errors": e.errors(), "raw_output": str(raw_output)[:500]}
-        )
-        sentry_sdk.capture_exception(e)
-        raise ValueError(f"AI returned malformed itinerary: {e.error_count()} validation errors.")
-```
-
-### 7.3 AI Call Wrapper with Safety Controls
-
-```python
-# app/ai/client.py
-import openai
-import logging
-import time
-import sentry_sdk
-from app.config import get_settings
-from app.middleware.correlation import get_correlation_id
-
-settings = get_settings()
-logger = logging.getLogger("ai.client")
-
-client = openai.AsyncOpenAI(
-    api_key=settings.openai_api_key,
-    timeout=settings.openai_timeout_seconds,
-    max_retries=settings.openai_max_retries,
-)
-
-async def call_ai_structured(
-    system_prompt: str,
-    user_prompt: str,
-    response_schema: type,
-    max_tokens: int = 2048,
-) -> dict:
-    """
-    Safe AI call wrapper:
-    - Enforces structured JSON output
-    - Tracks token usage
-    - Logs latency
-    - Captures failures to Sentry
-    - Validates response is non-empty
-    """
-    correlation_id = get_correlation_id()
-    start = time.perf_counter()
-
-    try:
-        response = await client.chat.completions.create(
-            model=settings.openai_model,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-
-        duration_ms = round((time.perf_counter() - start) * 1000, 2)
-        usage = response.usage
-
-        logger.info(
-            "ai_call_completed",
-            extra={
-                "correlation_id": correlation_id,
-                "model": settings.openai_model,
-                "duration_ms": duration_ms,
-                "prompt_tokens": usage.prompt_tokens,
-                "completion_tokens": usage.completion_tokens,
-                "total_tokens": usage.total_tokens,
-            }
-        )
-
-        content = response.choices[0].message.content
-        if not content:
-            raise ValueError("AI returned empty response.")
-
-        import json
-        return json.loads(content)
-
-    except openai.RateLimitError as e:
-        logger.error(f"OpenAI rate limit hit. Correlation: {correlation_id}")
-        sentry_sdk.capture_exception(e)
-        raise
-
-    except openai.APITimeoutError as e:
-        logger.error(f"OpenAI API timeout after {settings.openai_timeout_seconds}s.")
-        sentry_sdk.capture_exception(e)
-        raise
-
-    except Exception as e:
-        logger.error(f"AI call failed: {e}", exc_info=True)
-        sentry_sdk.capture_exception(e)
-        raise
-```
-
-### 7.4 Prompt Safety Rules
-
-1. All system prompts live in `app/ai/prompts/` as versioned Python constants — never inline strings scattered across services.
-2. User-provided text is **sanitized** before injection into prompts.
-3. Prompt injections are mitigated by wrapping user content in delimiters.
-4. AI is instructed to return ONLY JSON and to refuse tasks outside its scope.
-
-```python
-# app/utils/sanitize.py
-import re
-
-PROMPT_INJECTION_PATTERNS = [
-    r"ignore (previous|above|all) instructions?",
-    r"forget (your|the) (system |)prompt",
-    r"you are now",
-    r"act as (a )?(different|new|another)",
-    r"jailbreak",
-    r"DAN mode",
-]
-
-def sanitize_user_input(text: str, max_length: int = 2000) -> str:
-    """
-    Sanitizes user input before injecting into AI prompts.
-    - Truncates to max length
-    - Detects and removes prompt injection attempts
-    """
-    text = text.strip()[:max_length]
-    for pattern in PROMPT_INJECTION_PATTERNS:
-        if re.search(pattern, text, re.IGNORECASE):
-            raise ValueError("Invalid input detected.")
-    return text
-```
+The health endpoint (Phase 1.6) is the single most important monitoring surface. Implement it exactly as specified. UptimeRobot pings it every 5 minutes.
 
 ---
 
-## 8. Safety, Security & Resilience
+## PHASE 10 — CI/CD PIPELINE [AI]
 
-### 8.1 Rate Limiting
+### 10.1 — GitHub Actions Workflow
 
-```python
-# app/middleware/rate_limit.py
-import time
-import logging
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-from app.cache.redis_client import get_redis
-
-logger = logging.getLogger("rate_limit")
-
-RATE_LIMIT_RULES = {
-    "/auth/login":             (5, 60),     # 5 requests per 60 seconds
-    "/auth/register":          (3, 60),     # 3 per 60 seconds
-    "/ai/generate-itinerary":  (10, 60),    # 10 per minute (expensive)
-    "/ai/replan":              (10, 60),
-    "default":                 (100, 60),   # 100 per minute for all other endpoints
-}
-
-class RateLimitMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-        client_ip = request.client.host if request.client else "unknown"
-
-        # Find matching rule
-        limit, window = RATE_LIMIT_RULES.get(path) or RATE_LIMIT_RULES["default"]
-
-        redis = await get_redis()
-        key = f"rate_limit:{client_ip}:{path}"
-
-        try:
-            current = await redis.incr(key)
-            if current == 1:
-                await redis.expire(key, window)
-
-            if current > limit:
-                logger.warning(
-                    "rate_limit_exceeded",
-                    extra={"client_ip": client_ip, "path": path, "count": current, "limit": limit}
-                )
-                return JSONResponse(
-                    status_code=429,
-                    content={"error": "rate_limit_exceeded", "retry_after_seconds": window}
-                )
-        except Exception as e:
-            # If Redis is down, fail open — do not block users on rate limit infra failure
-            logger.error(f"Rate limit check failed (failing open): {e}")
-
-        return await call_next(request)
-```
-
-### 8.2 JWT Authentication
-
-```python
-# app/services/auth_service.py
-import jwt
-import logging
-import bcrypt
-from datetime import datetime, timedelta, UTC
-from app.config import get_settings
-
-settings = get_settings()
-logger = logging.getLogger("auth")
-
-def hash_password(plain: str) -> str:
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt(rounds=12)).decode()
-
-def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode(), hashed.encode())
-
-def create_access_token(user_id: str) -> str:
-    payload = {
-        "sub": user_id,
-        "type": "access",
-        "iat": datetime.now(UTC),
-        "exp": datetime.now(UTC) + timedelta(minutes=settings.jwt_access_token_expire_minutes),
-    }
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
-
-def create_refresh_token(user_id: str) -> str:
-    payload = {
-        "sub": user_id,
-        "type": "refresh",
-        "iat": datetime.now(UTC),
-        "exp": datetime.now(UTC) + timedelta(days=settings.jwt_refresh_token_expire_days),
-    }
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
-
-def decode_token(token: str) -> dict:
-    try:
-        return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-    except jwt.ExpiredSignatureError:
-        logger.warning("Expired token presented.")
-        raise ValueError("Token expired.")
-    except jwt.InvalidTokenError as e:
-        logger.warning(f"Invalid token: {e}")
-        raise ValueError("Invalid token.")
-```
-
-### 8.3 Circuit Breaker — External API Protection
-
-Prevents cascading failures when third-party APIs (Amadeus, Google Places, OpenWeather) go down.
-
-```python
-# app/utils/circuit_breaker.py
-import time
-import logging
-from enum import Enum
-from threading import Lock
-
-logger = logging.getLogger("circuit_breaker")
-
-class CircuitState(Enum):
-    CLOSED = "closed"       # Normal — requests flow through
-    OPEN = "open"           # Failing — requests are blocked
-    HALF_OPEN = "half_open" # Testing — one request allowed through
-
-class CircuitBreaker:
-    def __init__(
-        self,
-        name: str,
-        failure_threshold: int = 5,
-        recovery_timeout: int = 60,
-        expected_exception: type = Exception,
-    ):
-        self.name = name
-        self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
-        self.expected_exception = expected_exception
-        self.failure_count = 0
-        self.state = CircuitState.CLOSED
-        self.last_failure_time: float | None = None
-        self._lock = Lock()
-
-    def call(self, func, *args, **kwargs):
-        with self._lock:
-            if self.state == CircuitState.OPEN:
-                if time.time() - self.last_failure_time > self.recovery_timeout:
-                    self.state = CircuitState.HALF_OPEN
-                    logger.info(f"Circuit breaker '{self.name}' transitioning to HALF_OPEN.")
-                else:
-                    raise RuntimeError(f"Circuit breaker '{self.name}' is OPEN. Request blocked.")
-
-        try:
-            result = func(*args, **kwargs)
-            self._on_success()
-            return result
-        except self.expected_exception as e:
-            self._on_failure()
-            raise
-
-    def _on_success(self):
-        with self._lock:
-            if self.state == CircuitState.HALF_OPEN:
-                logger.info(f"Circuit breaker '{self.name}' recovered. State: CLOSED.")
-            self.failure_count = 0
-            self.state = CircuitState.CLOSED
-
-    def _on_failure(self):
-        with self._lock:
-            self.failure_count += 1
-            self.last_failure_time = time.time()
-            if self.failure_count >= self.failure_threshold:
-                self.state = CircuitState.OPEN
-                logger.error(
-                    f"Circuit breaker '{self.name}' OPENED after {self.failure_count} failures."
-                )
-
-# ── Pre-configured breakers for each external provider ──────────────────────
-amadeus_breaker       = CircuitBreaker(name="amadeus",        failure_threshold=5)
-google_places_breaker = CircuitBreaker(name="google_places",  failure_threshold=5)
-openweather_breaker   = CircuitBreaker(name="openweather",    failure_threshold=3)
-yelp_breaker          = CircuitBreaker(name="yelp",           failure_threshold=5)
-twilio_breaker        = CircuitBreaker(name="twilio",         failure_threshold=3)
-```
-
-### 8.4 Input Validation Rules
-
-All API inputs are validated via Pydantic schemas. No raw dictionaries pass into service layer.
-
-```python
-# app/schemas/trip_schemas.py
-from pydantic import BaseModel, Field, field_validator, model_validator
-from datetime import date
-from typing import Literal
-
-class CreateTripRequest(BaseModel):
-    destination: str = Field(..., min_length=2, max_length=100, strip_whitespace=True)
-    start_date: date
-    end_date: date
-    number_of_travelers: int = Field(..., ge=1, le=20)
-    budget_usd: float = Field(..., ge=50, le=100_000)
-    accommodation_type: Literal["hotel", "hostel", "airbnb", "resort", "guesthouse"]
-
-    # Optional preferences
-    travel_style: Literal["adventure", "cultural", "relaxed", "luxury", "budget"] | None = None
-    food_preferences: list[str] = Field(default_factory=list, max_length=10)
-    activity_interests: list[str] = Field(default_factory=list, max_length=15)
-
-    @field_validator("destination")
-    @classmethod
-    def destination_no_special_chars(cls, v):
-        import re
-        if re.search(r"[<>{}/\\]", v):
-            raise ValueError("Destination contains invalid characters.")
-        return v
-
-    @model_validator(mode="after")
-    def dates_are_valid(self):
-        if self.end_date <= self.start_date:
-            raise ValueError("end_date must be after start_date.")
-        trip_length = (self.end_date - self.start_date).days
-        if trip_length > 30:
-            raise ValueError("Trip duration cannot exceed 30 days for MVP.")
-        return self
-```
-
-### 8.5 Webhook Signature Verification — Zapier & Twilio
-
-```python
-# app/utils/webhook_security.py
-import hmac
-import hashlib
-import logging
-from fastapi import HTTPException, Header, Request
-
-logger = logging.getLogger("webhook.security")
-
-def verify_zapier_webhook(
-    request_body: bytes,
-    x_zapier_signature: str,
-    secret: str,
-) -> bool:
-    expected = hmac.new(secret.encode(), request_body, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, x_zapier_signature):
-        logger.warning("INVALID Zapier webhook signature. Possible spoofing attempt.")
-        raise HTTPException(status_code=403, detail="Invalid webhook signature.")
-    return True
-
-def verify_twilio_webhook(request: Request, x_twilio_signature: str, auth_token: str) -> bool:
-    from twilio.request_validator import RequestValidator
-    validator = RequestValidator(auth_token)
-    url = str(request.url)
-    form_data = {}  # Populated from form body
-    if not validator.validate(url, form_data, x_twilio_signature):
-        logger.warning("INVALID Twilio webhook signature.")
-        raise HTTPException(status_code=403, detail="Invalid Twilio signature.")
-    return True
-```
-
----
-
-## 9. Logging, Monitoring & Observability
-
-### 9.1 Structured Logging Configuration
-
-```python
-# app/utils/logging_config.py
-import logging
-import json
-import sys
-from datetime import datetime, UTC
-from app.config import get_settings
-
-settings = get_settings()
-
-class StructuredJSONFormatter(logging.Formatter):
-    """
-    Outputs every log line as a single JSON object.
-    Compatible with CloudWatch Logs Insights and Datadog.
-    """
-    def format(self, record: logging.LogRecord) -> str:
-        log_entry = {
-            "timestamp": datetime.now(UTC).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "service": "antigravity-travel-api",
-            "environment": settings.app_env,
-        }
-
-        # Attach extra fields (correlation_id, duration_ms, etc.)
-        for key, value in record.__dict__.items():
-            if key not in logging.LogRecord.__dict__ and not key.startswith("_"):
-                log_entry[key] = value
-
-        if record.exc_info:
-            log_entry["exception"] = self.formatException(record.exc_info)
-
-        return json.dumps(log_entry)
-
-def configure_logging():
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG if settings.debug else logging.INFO)
-
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(StructuredJSONFormatter())
-    root.handlers = [handler]
-
-    # Suppress noisy third-party loggers
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-    logging.getLogger("botocore").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-```
-
-### 9.2 Key Log Events (What We Always Log)
-
-| Event | Level | When |
-|---|---|---|
-| `request_processed` | INFO | Every HTTP request |
-| `task_started` | INFO | Every Celery task |
-| `task_succeeded` | INFO | Every completed task |
-| `task_failed` | ERROR | Any task failure |
-| `task_retrying` | WARNING | Any task retry |
-| `ai_call_completed` | INFO | Every OpenAI call (with token usage) |
-| `ai_output_validation_failed` | ERROR | AI schema validation failure |
-| `cache_hit` | DEBUG | Cache hit |
-| `cache_miss` | DEBUG | Cache miss |
-| `cache_invalidated` | INFO | Cache explicitly cleared |
-| `circuit_breaker_opened` | ERROR | External API circuit opened |
-| `queue_depth_alert` | WARNING | Queue exceeds threshold |
-| `dead_letter_queue_not_empty` | ERROR | Tasks in DLQ |
-| `db_pool_near_capacity` | WARNING | >85% pool connections in use |
-| `slow_request_detected` | WARNING | Request >3000ms |
-| `rate_limit_exceeded` | WARNING | Rate limit breach |
-| `invalid_webhook_signature` | WARNING | Spoofing attempt |
-| `unhandled_exception` | ERROR | Any unhandled 500 |
-
-### 9.3 CloudWatch Alarms — Production Thresholds
-
-Define the following alarms in Terraform (`infrastructure/terraform/cloudwatch.tf`):
-
-| Alarm | Metric | Threshold | Action |
-|---|---|---|---|
-| High 5xx Error Rate | HTTP 5xx / Total Requests | >1% over 5 min | PagerDuty alert |
-| High Latency | P99 response time | >3000ms over 5 min | PagerDuty alert |
-| Queue Depth Critical | Any queue depth | >1000 tasks | PagerDuty alert |
-| DLQ Not Empty | dead_letter_queue depth | >0 | PagerDuty alert |
-| AI API Errors | OpenAI error count | >10 in 5 min | Slack alert |
-| DB Connections | Pool checked_out | >85% | Slack alert |
-| Worker Health | Celery active workers | <1 | PagerDuty alert |
-| Memory | ECS container memory | >80% | Auto-scale trigger |
-| CPU | ECS container CPU | >70% for 5 min | Auto-scale trigger |
-
-### 9.4 Sentry Configuration
-
-```python
-# Already called in main.py at startup.
-# Additional Sentry context enrichment:
-
-import sentry_sdk
-
-def add_sentry_user_context(user_id: str, email: str):
-    """Call after authentication to enrich Sentry events with user identity."""
-    with sentry_sdk.configure_scope() as scope:
-        scope.set_user({"id": user_id, "email": email})
-
-def add_sentry_trip_context(trip_id: str):
-    """Add trip context to all Sentry events in the current request."""
-    with sentry_sdk.configure_scope() as scope:
-        scope.set_tag("trip_id", trip_id)
-```
-
----
-
-## 10. CI/CD Pipeline — GitHub Actions
-
-### 10.1 Pull Request Checks
-
-Runs on every PR to `main` and `develop`. All checks must pass before merge.
+Build `.github/workflows/ci.yml`:
 
 ```yaml
-# .github/workflows/pr-checks.yml
-name: PR Checks
-
-on:
-  pull_request:
-    branches: [main, develop]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  # ── Backend Checks ────────────────────────────────────────────────────────
-  backend-lint:
-    name: Backend — Lint & Type Check
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/api
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
-
-      - name: Ruff — Linting
-        run: ruff check . --output-format=github
-
-      - name: Ruff — Format Check
-        run: ruff format --check .
-
-      - name: Mypy — Type Checking
-        run: mypy app/ --ignore-missing-imports --strict
-
-      - name: Bandit — Security Scan
-        run: bandit -r app/ -ll -ii
-
-  backend-test:
-    name: Backend — Tests
-    runs-on: ubuntu-latest
-    needs: backend-lint
-    defaults:
-      run:
-        working-directory: apps/api
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: travel_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
-
-      - name: Run Alembic Migrations (Test DB)
-        env:
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/travel_test
-        run: alembic upgrade head
-
-      - name: Run Unit Tests
-        env:
-          APP_ENV: development
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/travel_test
-          REDIS_URL: redis://localhost:6379/0
-          APP_SECRET_KEY: test-secret-key
-          JWT_SECRET_KEY: test-jwt-secret
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_TEST }}
-        run: |
-          pytest tests/unit/ \
-            -v \
-            --tb=short \
-            --cov=app \
-            --cov-report=xml \
-            --cov-report=term-missing \
-            --cov-fail-under=80
-
-      - name: Run Integration Tests
-        env:
-          APP_ENV: development
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/travel_test
-          REDIS_URL: redis://localhost:6379/0
-          APP_SECRET_KEY: test-secret-key
-          JWT_SECRET_KEY: test-jwt-secret
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_TEST }}
-        run: pytest tests/integration/ -v --tb=short
-
-      - name: Upload Coverage Report
-        uses: codecov/codecov-action@v4
-        with:
-          file: apps/api/coverage.xml
-          fail_ci_if_error: true
-
-  # ── Frontend Checks ───────────────────────────────────────────────────────
-  frontend-lint:
-    name: Frontend — Lint & Type Check
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/web
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: apps/web/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: ESLint
-        run: npm run lint
-
-      - name: TypeScript — Type Check
-        run: npm run type-check
-
-      - name: Prettier — Format Check
-        run: npm run format:check
-
-  frontend-build:
-    name: Frontend — Build Check
-    runs-on: ubuntu-latest
-    needs: frontend-lint
-    defaults:
-      run:
-        working-directory: apps/web
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: apps/web/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Next.js App
-        env:
-          NEXT_PUBLIC_API_URL: https://api-staging.antigravity.io
-        run: npm run build
-
-  # ── Security Checks ───────────────────────────────────────────────────────
-  security-scan:
-    name: Security — Dependency Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Python — pip-audit
-        working-directory: apps/api
-        run: |
-          pip install pip-audit
-          pip-audit --requirement requirements.txt --strict
-
-      - name: Node — npm audit
-        working-directory: apps/web
-        run: npm audit --audit-level=high
-
-      - name: Trivy — Container Vulnerability Scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: "fs"
-          scan-ref: "."
-          severity: "HIGH,CRITICAL"
-          exit-code: "1"
-
-  # ── Docker Build Validation ───────────────────────────────────────────────
-  docker-build-check:
-    name: Docker — Build Validation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build API Docker Image
-        run: docker build -t antigravity-api:pr-check apps/api/
-
-      - name: Build Worker Docker Image
-        run: docker build -f apps/api/Dockerfile.worker -t antigravity-worker:pr-check apps/api/
-```
-
-### 10.2 Staging Deployment
-
-Triggered on every push to `develop`. Deploys to the staging environment.
-
-```yaml
-# .github/workflows/deploy-staging.yml
-name: Deploy to Staging
-
-on:
-  push:
-    branches: [develop]
-
-jobs:
-  deploy-staging:
-    name: Deploy — Staging
-    runs-on: ubuntu-latest
-    environment:
-      name: staging
-      url: https://staging.antigravity.io
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build & Push API Image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: staging-${{ github.sha }}
-        run: |
-          docker build -t $ECR_REGISTRY/antigravity-api:$IMAGE_TAG apps/api/
-          docker tag  $ECR_REGISTRY/antigravity-api:$IMAGE_TAG $ECR_REGISTRY/antigravity-api:staging-latest
-          docker push $ECR_REGISTRY/antigravity-api:$IMAGE_TAG
-          docker push $ECR_REGISTRY/antigravity-api:staging-latest
-
-      - name: Build & Push Worker Image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: staging-${{ github.sha }}
-        run: |
-          docker build -f apps/api/Dockerfile.worker \
-            -t $ECR_REGISTRY/antigravity-worker:$IMAGE_TAG apps/api/
-          docker push $ECR_REGISTRY/antigravity-worker:$IMAGE_TAG
-
-      - name: Run Database Migrations — Staging
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: staging-${{ github.sha }}
-        run: |
-          aws ecs run-task \
-            --cluster antigravity-staging \
-            --task-definition antigravity-migrate \
-            --overrides '{
-              "containerOverrides": [{
-                "name": "migrate",
-                "command": ["alembic", "upgrade", "head"],
-                "environment": [{"name": "IMAGE_TAG", "value": "${{ github.sha }}"}]
-              }]
-            }' \
-            --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[...],securityGroups=[...]}"
-
-      - name: Deploy API to ECS — Staging
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: staging-${{ github.sha }}
-        run: |
-          aws ecs update-service \
-            --cluster antigravity-staging \
-            --service antigravity-api \
-            --force-new-deployment \
-            --region us-east-1
-
-      - name: Wait for ECS Service Stability
-        run: |
-          aws ecs wait services-stable \
-            --cluster antigravity-staging \
-            --services antigravity-api antigravity-worker
-
-      - name: Run Health Check — Staging
-        run: |
-          for i in {1..10}; do
-            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://api-staging.antigravity.io/health/ready)
-            if [ "$RESPONSE" = "200" ]; then
-              echo "Health check passed."
-              exit 0
-            fi
-            echo "Attempt $i: Health check returned $RESPONSE. Retrying in 15s..."
-            sleep 15
-          done
-          echo "Health check failed after 10 attempts."
-          exit 1
-
-      - name: Deploy Frontend — Vercel Staging
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          cd apps/web
-          npx vercel --prod --token=$VERCEL_TOKEN \
-            --env NEXT_PUBLIC_API_URL=https://api-staging.antigravity.io
-```
-
-### 10.3 Production Deployment
-
-Triggered on push to `main` (via PR merge). Requires manual approval gate.
-
-```yaml
-# .github/workflows/deploy-production.yml
-name: Deploy to Production
+name: CI
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  # ── Approval Gate ─────────────────────────────────────────────────────────
-  require-approval:
-    name: Require Manual Approval
+  lint-and-test:
     runs-on: ubuntu-latest
-    environment:
-      name: production   # Configured with required reviewers in GitHub settings
-    steps:
-      - name: Approved
-        run: echo "Production deployment approved."
-
-  # ── Production Deployment ─────────────────────────────────────────────────
-  deploy-production:
-    name: Deploy — Production
-    runs-on: ubuntu-latest
-    needs: require-approval
-    environment:
-      name: production
-      url: https://travel.antigravity.io
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/setup-node@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
-          aws-region: us-east-1
+          node-version: '22'
+          cache: 'npm'
+      - name: Install backend deps
+        run: cd backend && npm ci
+      - name: Type check backend
+        run: cd backend && npx tsc --noEmit
+      - name: Install frontend deps
+        run: cd frontend && npm ci
+      - name: Type check frontend
+        run: cd frontend && npx tsc --noEmit
+      - name: Lint frontend
+        run: cd frontend && npx next lint
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build & Push Production Images
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: prod-${{ github.sha }}
-        run: |
-          docker build -t $ECR_REGISTRY/antigravity-api:$IMAGE_TAG apps/api/
-          docker tag $ECR_REGISTRY/antigravity-api:$IMAGE_TAG $ECR_REGISTRY/antigravity-api:latest
-          docker push $ECR_REGISTRY/antigravity-api:$IMAGE_TAG
-          docker push $ECR_REGISTRY/antigravity-api:latest
-
-          docker build -f apps/api/Dockerfile.worker \
-            -t $ECR_REGISTRY/antigravity-worker:$IMAGE_TAG apps/api/
-          docker tag $ECR_REGISTRY/antigravity-worker:$IMAGE_TAG $ECR_REGISTRY/antigravity-worker:latest
-          docker push $ECR_REGISTRY/antigravity-worker:$IMAGE_TAG
-          docker push $ECR_REGISTRY/antigravity-worker:latest
-
-      - name: Tag Git Release
-        run: |
-          git tag "release-$(date +'%Y%m%d')-${{ github.sha:0:8 }}"
-          git push origin --tags
-
-      - name: Run Database Migrations — Production
-        run: |
-          aws ecs run-task \
-            --cluster antigravity-production \
-            --task-definition antigravity-migrate-prod \
-            --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[...],securityGroups=[...]}"
-          # Wait for task completion before proceeding
-          echo "Waiting for migration task..."
-          sleep 30
-
-      - name: Deploy API — Blue/Green via ECS
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: prod-${{ github.sha }}
-        run: |
-          aws ecs update-service \
-            --cluster antigravity-production \
-            --service antigravity-api \
-            --force-new-deployment
-
-      - name: Wait for ECS Service Stability
-        run: |
-          aws ecs wait services-stable \
-            --cluster antigravity-production \
-            --services antigravity-api antigravity-worker
-
-      - name: Production Health Check — Deep
-        run: |
-          for i in {1..15}; do
-            LIVE=$(curl -s -o /dev/null -w "%{http_code}" https://api.antigravity.io/health/live)
-            READY=$(curl -s -o /dev/null -w "%{http_code}" https://api.antigravity.io/health/ready)
-            if [ "$LIVE" = "200" ] && [ "$READY" = "200" ]; then
-              echo "Production health checks passed."
-              exit 0
-            fi
-            echo "Attempt $i: live=$LIVE ready=$READY — waiting 20s..."
-            sleep 20
-          done
-          echo "PRODUCTION HEALTH CHECK FAILED. Triggering rollback."
-          exit 1
-
-      - name: Notify Slack — Deployment Success
-        if: success()
-        uses: slackapi/slack-github-action@v1.27
-        with:
-          payload: |
-            {
-              "text": ":rocket: *Production deployment succeeded!*\nCommit: `${{ github.sha }}`\nBy: ${{ github.actor }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-      - name: Notify Slack — Deployment Failed
-        if: failure()
-        uses: slackapi/slack-github-action@v1.27
-        with:
-          payload: |
-            {
-              "text": ":fire: *Production deployment FAILED!*\nCommit: `${{ github.sha }}`\nBy: ${{ github.actor }}\nCheck: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-```
-
-### 10.4 Rollback Workflow
-
-Manually triggered. Can roll back to any previous image tag in ECR.
-
-```yaml
-# .github/workflows/rollback.yml
-name: Emergency Rollback
-
-on:
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "ECR image tag to roll back to (e.g. prod-abc1234)"
-        required: true
-      reason:
-        description: "Reason for rollback"
-        required: true
-
-jobs:
-  rollback:
-    name: Rollback — Production
+  build-check:
+    needs: lint-and-test
     runs-on: ubuntu-latest
-    environment: production
-
     steps:
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
-          aws-region: us-east-1
-
-      - name: Log Rollback Intent
-        run: |
-          echo "ROLLBACK initiated by ${{ github.actor }}"
-          echo "Target tag: ${{ github.event.inputs.image_tag }}"
-          echo "Reason: ${{ github.event.inputs.reason }}"
-
-      - name: Update ECS Task Definition to Previous Image
-        run: |
-          CURRENT_TASK_DEF=$(aws ecs describe-services \
-            --cluster antigravity-production \
-            --services antigravity-api \
-            --query 'services[0].taskDefinition' --output text)
-
-          NEW_TASK_DEF=$(aws ecs describe-task-definition \
-            --task-definition $CURRENT_TASK_DEF \
-            --query 'taskDefinition' | \
-            jq '.containerDefinitions[0].image = "${{ env.ECR_REGISTRY }}/antigravity-api:${{ github.event.inputs.image_tag }}"')
-
-          aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF"
-
-          aws ecs update-service \
-            --cluster antigravity-production \
-            --service antigravity-api \
-            --force-new-deployment
-
-      - name: Wait for Rollback Stability
-        run: |
-          aws ecs wait services-stable \
-            --cluster antigravity-production \
-            --services antigravity-api
-
-      - name: Post-Rollback Health Check
-        run: |
-          sleep 30
-          READY=$(curl -s -o /dev/null -w "%{http_code}" https://api.antigravity.io/health/ready)
-          if [ "$READY" != "200" ]; then
-            echo "ROLLBACK HEALTH CHECK FAILED. Manual intervention required."
-            exit 1
-          fi
-          echo "Rollback health check passed."
-
-      - name: Notify Slack — Rollback
-        uses: slackapi/slack-github-action@v1.27
-        with:
-          payload: |
-            {
-              "text": ":rewind: *Production ROLLBACK executed*\nTag: `${{ github.event.inputs.image_tag }}`\nBy: ${{ github.actor }}\nReason: ${{ github.event.inputs.reason }}"
-            }
+          node-version: '22'
+      - name: Build backend
+        run: cd backend && npm ci && npm run build
+      - name: Build frontend check
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+        run: cd frontend && npm ci && npm run build
 ```
 
-### 10.5 GitHub Secrets Required
+Railway and Vercel auto-deploy from `main` — no separate deploy step needed in CI.
 
-Store all of the following in **GitHub → Settings → Secrets and Variables → Actions**:
+---
 
-| Secret Name | Scope | Purpose |
+## PHASE 11 — DEPLOYMENT [AI + YOU]
+
+### 11.1 — Railway Deployment [YOU]
+
+1. In Railway dashboard → your `retreat` project → **New Service → GitHub Repo**
+2. Select the repo, root directory: `backend` → Railway detects Node.js automatically
+3. Add all `backend/.env` variables as Railway env vars
+4. Add one more: `RAILWAY_ENVIRONMENT=production`
+5. Under **Settings → Networking**: generate a public domain (e.g. `retreat-backend.up.railway.app`)
+6. Repeat for `ai-service` directory — Railway detects Python/Uvicorn automatically
+7. Add `AI_SERVICE_URL` in backend env vars pointing to the ai-service Railway URL
+8. Set up Axiom log drain in Railway → your backend service → **Settings → Log Drains → Add Drain**
+   - Format: `JSON`
+   - URL: `https://api.axiom.co/v1/datasets/retreat-backend/ingest`
+   - Header key: `Authorization` → value: `Bearer YOUR_AXIOM_API_KEY`
+   - Save — Railway now streams all Pino JSON logs directly into Axiom
+
+### 11.2 — Vercel Deployment [YOU]
+
+1. Go to https://vercel.com → Import Project → select your repo, root: `frontend`
+2. Add all `frontend/.env.local` variables as Vercel env vars
+3. Set `NEXT_PUBLIC_API_URL` to your Railway backend URL (e.g. `https://retreat-backend.up.railway.app`)
+4. Deploy
+5. Copy the Vercel production URL → update Google Cloud Console OAuth redirect URIs with this URL
+
+### 11.3 — Post-Deployment Verification [YOU]
+
+Run these checks manually after deploy:
+```bash
+# Health check
+curl https://retreat-backend.up.railway.app/api/v1/health
+
+# Expected response:
+# { "status": "ok", "services": { "redis": "ok", "supabase": "ok", "ai_service": "ok" } }
+```
+
+---
+
+## PHASE 12 — FINAL CHECKLIST [YOU]
+
+### Security
+- [ ] No `.env` files committed to Git
+- [ ] All protected routes return 401 without a valid JWT
+- [ ] QStash worker endpoint verifies signature before processing
+- [ ] WhatsApp access token is in env vars — never in frontend code
+- [ ] Supabase `service_role` key is backend only — never exposed to Next.js frontend
+
+### Functionality
+- [ ] Google OAuth login works end-to-end
+- [ ] Property search returns results from Booking.com
+- [ ] Activity search returns results from Google Places
+- [ ] AI itinerary generates without errors
+- [ ] Tapping "Interested" creates an inquiry in DB
+- [ ] WhatsApp message sends after countdown (test with your own number)
+- [ ] Swipe animations work on mobile touch
+- [ ] Map shows property and activity pins correctly
+
+### Observability
+- [ ] `GET /api/v1/health` returns all services "ok" in production
+- [ ] Sentry receives a test error from both frontend and backend
+- [ ] Axiom shows structured logs from Railway (search by `requestId` or `userId`)
+- [ ] UptimeRobot configured to ping health endpoint every 5 minutes
+
+### Frontend Quality
+- [ ] All page transitions use AnimatePresence slide-up animation
+- [ ] Property cards animate out correctly on swipe
+- [ ] Inquiry modal countdown works and sends message
+- [ ] Dashboard stats animate from 0 on mount
+- [ ] All buttons have `whileTap` scale effect
+- [ ] Loading skeletons appear while data is fetching
+- [ ] App works on mobile viewport (375px width)
+
+---
+
+## ENVIRONMENT VARIABLES — COMPLETE REFERENCE
+
+| Variable | Service | Description |
 |---|---|---|
-| `AWS_ACCESS_KEY_ID` | Staging | ECS/ECR access — staging |
-| `AWS_SECRET_ACCESS_KEY` | Staging | ECS/ECR access — staging |
-| `AWS_ACCESS_KEY_ID_PROD` | Production | ECS/ECR access — production |
-| `AWS_SECRET_ACCESS_KEY_PROD` | Production | ECS/ECR access — production |
-| `VERCEL_TOKEN` | Staging + Prod | Vercel deployments |
-| `OPENAI_API_KEY_TEST` | CI | Sandboxed test key (low limits) |
-| `SLACK_WEBHOOK_URL` | All | Deployment notifications |
-
----
-
-## 11. Docker & Deployment
-
-### 11.1 API Dockerfile
-
-```dockerfile
-# apps/api/Dockerfile
-FROM python:3.12-slim AS base
-
-# Security: run as non-root user
-RUN groupadd -r appgroup && useradd -r -g appgroup appuser
-
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    curl \
-  && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies separately for Docker layer caching
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY app/ ./app/
-COPY alembic.ini .
-
-# Set ownership
-RUN chown -R appuser:appgroup /app
-USER appuser
-
-# Expose port
-EXPOSE 8000
-
-# Health check — ECS uses this for container health
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD curl -f http://localhost:8000/health/live || exit 1
-
-# Start with Gunicorn + Uvicorn workers for production
-CMD ["gunicorn", "app.main:app", \
-     "-k", "uvicorn.workers.UvicornWorker", \
-     "--workers", "4", \
-     "--bind", "0.0.0.0:8000", \
-     "--timeout", "120", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-"]
-```
-
-### 11.2 Worker Dockerfile
-
-```dockerfile
-# apps/api/Dockerfile.worker
-FROM python:3.12-slim
-
-RUN groupadd -r appgroup && useradd -r -g appgroup appuser
-
-WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev \
-  && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY app/ ./app/
-
-RUN chown -R appuser:appgroup /app
-USER appuser
-
-# Worker starts Celery, NOT the API server
-CMD ["celery", "-A", "app.workers.celery_app", "worker", \
-     "--queues=accommodation_queue,activity_queue,restaurant_queue,weather_queue,itinerary_queue,inquiry_queue", \
-     "--concurrency=4", \
-     "--loglevel=info", \
-     "--logfile=-"]
-```
-
-### 11.3 Docker Compose — Local Development
-
-```yaml
-# infrastructure/docker-compose.yml
-version: "3.9"
-
-services:
-  api:
-    build:
-      context: ../apps/api
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - APP_ENV=development
-      - DATABASE_URL=postgresql+asyncpg://dev:dev@postgres:5432/travel_dev
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/2
-      - CELERY_RESULT_BACKEND=redis://redis:6379/3
-    env_file:
-      - ../apps/api/.env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ../apps/api/app:/app/app   # Hot reload in dev
-    command: >
-      uvicorn app.main:app
-        --host 0.0.0.0
-        --port 8000
-        --reload
-
-  worker:
-    build:
-      context: ../apps/api
-      dockerfile: Dockerfile.worker
-    environment:
-      - APP_ENV=development
-      - DATABASE_URL=postgresql+asyncpg://dev:dev@postgres:5432/travel_dev
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/2
-      - CELERY_RESULT_BACKEND=redis://redis:6379/3
-    env_file:
-      - ../apps/api/.env
-    depends_on:
-      - api
-      - redis
-      - postgres
-
-  beat:
-    build:
-      context: ../apps/api
-      dockerfile: Dockerfile.worker
-    command: >
-      celery -A app.workers.celery_app beat
-        --loglevel=info
-        --scheduler redbeat.RedBeatScheduler
-    depends_on:
-      - redis
-    env_file:
-      - ../apps/api/.env
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: dev
-      POSTGRES_PASSWORD: dev
-      POSTGRES_DB: travel_dev
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dev"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  flower:
-    image: mher/flower:2.0
-    command: celery flower --broker=redis://redis:6379/2
-    ports:
-      - "5555:5555"
-    depends_on:
-      - redis
-
-volumes:
-  postgres_data:
-  redis_data:
-```
-
----
-
-## 12. External API Resilience
-
-### 12.1 Retry Utility with Exponential Backoff
-
-```python
-# app/utils/retry.py
-import asyncio
-import logging
-import random
-from functools import wraps
-
-logger = logging.getLogger("retry")
-
-def async_retry(
-    max_attempts: int = 3,
-    base_delay: float = 1.0,
-    max_delay: float = 60.0,
-    exceptions: tuple = (Exception,),
-):
-    """
-    Decorator for async functions with exponential backoff + jitter.
-    Jitter prevents thundering herd when multiple retries hit simultaneously.
-    """
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            for attempt in range(1, max_attempts + 1):
-                try:
-                    return await func(*args, **kwargs)
-                except exceptions as e:
-                    if attempt == max_attempts:
-                        logger.error(
-                            f"Max retries reached for {func.__name__}. "
-                            f"Final error: {e}"
-                        )
-                        raise
-                    delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
-                    jitter = random.uniform(0, delay * 0.1)
-                    wait = delay + jitter
-                    logger.warning(
-                        f"Retry {attempt}/{max_attempts} for {func.__name__}. "
-                        f"Error: {e}. Waiting {wait:.1f}s..."
-                    )
-                    await asyncio.sleep(wait)
-        return wrapper
-    return decorator
-```
-
-### 12.2 External API Client Pattern
-
-```python
-# app/services/accommodation_service.py (excerpt)
-import httpx
-import logging
-from app.utils.retry import async_retry
-from app.utils.circuit_breaker import amadeus_breaker
-
-logger = logging.getLogger("service.accommodation")
-
-class AccommodationService:
-    AMADEUS_BASE_URL = "https://test.api.amadeus.com/v2"
-    TIMEOUT_SECONDS = 15
-
-    @async_retry(max_attempts=3, base_delay=2.0, exceptions=(httpx.RequestError, httpx.TimeoutException))
-    async def _fetch_from_amadeus(self, destination: str, check_in: str, check_out: str) -> list[dict]:
-        """
-        Fetches accommodations from Amadeus API.
-        - Wrapped with retry decorator
-        - Uses circuit breaker
-        - Times out after 15 seconds
-        - Validates response structure before returning
-        """
-        def _call():
-            # Circuit breaker wraps the sync HTTP call
-            with httpx.Client(timeout=self.TIMEOUT_SECONDS) as client:
-                response = client.get(
-                    f"{self.AMADEUS_BASE_URL}/shopping/hotel-offers",
-                    params={"cityCode": destination, "checkInDate": check_in, "checkOutDate": check_out},
-                    headers={"Authorization": f"Bearer {self._get_token()}"},
-                )
-                response.raise_for_status()
-                return response.json()
-
-        try:
-            data = amadeus_breaker.call(_call)
-        except RuntimeError as e:
-            logger.warning(f"Amadeus circuit breaker open. Returning empty results. {e}")
-            return []  # Graceful degradation
-
-        # Validate response structure
-        if "data" not in data or not isinstance(data["data"], list):
-            logger.error(f"Amadeus returned unexpected structure: {str(data)[:200]}")
-            return []
-
-        return data["data"]
-```
-
----
-
-## 13. Incident Response Runbook
-
-### 13.1 Severity Levels
-
-| Level | Definition | Response Time | Example |
-|---|---|---|---|
-| P0 — Critical | Full production outage | < 15 min | API returns 5xx for all requests |
-| P1 — High | Major feature broken | < 1 hour | AI itinerary generation completely fails |
-| P2 — Medium | Degraded experience | < 4 hours | Accommodation search slow |
-| P3 — Low | Minor issue | < 24 hours | Non-critical UI bug |
-
-### 13.2 Common Incident Playbooks
-
-#### API Health Check Failing — `/health/ready` returns 503
-
-```
-1. Check CloudWatch Logs: filter for "readiness" in /antigravity/travel-api
-2. Identify failing check: postgres or redis
-3. If postgres: check RDS instance status in AWS console
-4. If redis: check ElastiCache cluster status
-5. If code issue: trigger rollback workflow with last stable tag
-6. Notify team in #incidents Slack channel
-```
-
-#### Dead Letter Queue Not Empty
-
-```
-1. Check dead_letter_queue depth in Redis: redis-cli llen dead_letter_queue
-2. Inspect failed task payloads: celery inspect reserved
-3. Identify failure root cause from task logs (filter by task_id in CloudWatch)
-4. Fix root cause (external API down, data issue, etc.)
-5. Replay tasks from DLQ: celery -A app.workers.celery_app call tasks.dlq.replay
-6. Monitor queue depth returns to 0
-```
-
-#### AI Itinerary Generation Failures Spike
-
-```
-1. Check OpenAI status page: https://status.openai.com
-2. Check OPENAI_API_KEY validity and quota in OpenAI dashboard
-3. Review Sentry for ai_output_validation_failed events
-4. If OpenAI is down: enable fallback mode (basic template-based itinerary)
-5. If prompt issue: review recent prompt changes in app/ai/prompts/
-6. Alert: do not deploy prompt changes without staging validation
-```
-
----
-
-## 14. Development Phase Checklist
-
-### Phase 1 — Foundation ✅ Criteria
-
-- [ ] Monorepo initialized with folder structure as defined in Section 1
-- [ ] `.env.example` committed with all required variables
-- [ ] `docker-compose.yml` starts all services with one command
-- [ ] PostgreSQL migrations run via Alembic on startup
-- [ ] FastAPI starts with all middleware registered
-- [ ] `/health/live` and `/health/ready` return correctly
-- [ ] JWT auth endpoints working (register, login, refresh)
-- [ ] Structured JSON logging outputting correctly
-- [ ] Sentry connected and receiving test events
-- [ ] GitHub Actions PR checks passing (lint, type check, tests)
-- [ ] Staging deployment pipeline functional
-
-### Phase 2 — Aggregation Systems ✅ Criteria
-
-- [ ] All Celery queues initialized and visible in Flower dashboard
-- [ ] Accommodation task fetches from at least one provider (Amadeus)
-- [ ] Activity task fetches from Google Places
-- [ ] Restaurant task fetches from Yelp or Foursquare
-- [ ] Weather task fetches from OpenWeatherMap
-- [ ] Circuit breakers active on all external API clients
-- [ ] Retry logic verified (simulate API timeout, confirm retry behavior)
-- [ ] Cache layer storing and expiring search results correctly
-- [ ] Queue depth checks running every 5 minutes via Beat
-
-### Phase 3 — AI Planning Engine ✅ Criteria
-
-- [ ] LangGraph graph defined with all 7 agents
-- [ ] All AI calls use `call_ai_structured()` wrapper
-- [ ] All AI responses validated against Pydantic schemas before storage
-- [ ] Prompt injection sanitization active on all user inputs
-- [ ] Token usage logged for every AI call
-- [ ] AI itinerary generation works end-to-end in staging
-- [ ] Budget validation prevents over-budget itineraries
-- [ ] Geographic clustering producing realistic daily schedules
-
-### Phase 4 — Automation Workflows ✅ Criteria
-
-- [ ] Inquiry approval UI functional (user can review, edit, approve)
-- [ ] Zapier webhook signature verified before processing
-- [ ] Twilio webhook signature verified before processing
-- [ ] Outbound WhatsApp messages only sent after user approval
-- [ ] Incoming replies captured, stored, and summarized by AI
-- [ ] No autonomous booking or negotiation behavior possible
-
-### Phase 5 — Production Readiness ✅ Criteria
-
-- [ ] All CloudWatch alarms configured per Section 9.3
-- [ ] ECS auto-scaling rules configured for CPU and memory
-- [ ] RDS automated backups enabled (7-day retention minimum)
-- [ ] ElastiCache backup enabled
-- [ ] Production deployment requires manual approval gate
-- [ ] Rollback workflow tested against staging
-- [ ] All secrets stored in AWS Secrets Manager — zero plain-text secrets in ECS
-- [ ] Security scan (Trivy, Bandit, npm audit) passing with no HIGH/CRITICAL findings
-- [ ] Test coverage ≥ 80%
-- [ ] `/docs` Swagger endpoint disabled in production
-- [ ] CORS restricted to production frontend domain only
-
----
-
-*Document maintained by the Google Antigravity Engineering Team.*  
-*For questions, raise a GitHub issue in the `antigravity-travel` repository.*
+| `NODE_ENV` | Backend | `development` or `production` |
+| `PORT` | Backend | `3001` |
+| `SUPABASE_URL` | Backend + Frontend | From Supabase settings |
+| `SUPABASE_ANON_KEY` | Backend + Frontend | From Supabase settings |
+| `SUPABASE_SERVICE_KEY` | Backend only | From Supabase settings — never frontend |
+| `UPSTASH_REDIS_REST_URL` | Backend | From Upstash dashboard |
+| `UPSTASH_REDIS_REST_TOKEN` | Backend | From Upstash dashboard |
+| `QSTASH_TOKEN` | Backend | From Upstash QStash |
+| `QSTASH_CURRENT_SIGNING_KEY` | Backend | From Upstash QStash |
+| `QSTASH_NEXT_SIGNING_KEY` | Backend | From Upstash QStash |
+| `RAPIDAPI_KEY` | Backend | From RapidAPI dashboard → My Apps |
+| `RAPIDAPI_BOOKING_HOST` | Backend | `booking-com15.p.rapidapi.com` |
+| `RAPIDAPI_AIRBNB_HOST` | Backend | `airbnb13.p.rapidapi.com` (or subscribed provider host) |
+| `GOOGLE_PLACES_API_KEY` | Backend | From Google Cloud Console |
+| `AI_SERVICE_URL` | Backend | Railway URL of the Python AI service |
+| `AXIOM_API_KEY` | Backend | From Axiom → Settings → API Tokens |
+| `AXIOM_DATASET` | Backend | `retreat-backend` (the dataset name you created) |
+| `SENTRY_DSN` | Backend | From Sentry backend project |
+| `WORKER_SECRET` | Backend | Random 32-char string — shared secret for worker auth |
+| `NVIDIA_API_KEY` | AI Service | From build.nvidia.com → API Keys |
+| `AI_SENTRY_DSN` | AI Service | From Sentry ai project |
+| `NEXT_PUBLIC_SUPABASE_URL` | Frontend | Same as SUPABASE_URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Frontend | Same as SUPABASE_ANON_KEY |
+| `NEXT_PUBLIC_API_URL` | Frontend | Railway backend URL |
+| `NEXT_PUBLIC_SENTRY_DSN` | Frontend | From Sentry frontend project |

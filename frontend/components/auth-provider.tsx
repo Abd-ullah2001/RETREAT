@@ -1,0 +1,78 @@
+'use client';
+
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
+import { verifyAuth } from '@/lib/api';
+import type { User } from '@/types';
+
+interface AuthContextValue {
+  session: Session | null;
+  user: User | null;
+  loading: boolean;
+  signInWithGoogle: () => Promise<void>;
+  signOut: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      if (data.session?.access_token) {
+        verifyAuth(data.session.access_token)
+          .then(setUser)
+          .catch(() => setUser(null))
+          .finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      setSession(newSession);
+      if (newSession?.access_token) {
+        try {
+          const profile = await verifyAuth(newSession.access_token);
+          setUser(profile);
+        } catch {
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const signInWithGoogle = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ session, user, loading, signInWithGoogle, signOut }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
+}
