@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
-import { supabase } from './supabase';
+import { requireSupabase } from './supabase';
 import type { Activity, Inquiry, Property, Trip, User } from '@/types';
 
 const api: AxiosInstance = axios.create({
@@ -7,6 +7,7 @@ const api: AxiosInstance = axios.create({
 });
 
 api.interceptors.request.use(async (config) => {
+  const supabase = requireSupabase();
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (token) {
@@ -19,6 +20,7 @@ api.interceptors.response.use(
   (res) => res,
   async (error) => {
     if (error.response?.status === 401 && typeof window !== 'undefined') {
+      const supabase = requireSupabase();
       await supabase.auth.signOut();
       window.location.href = '/';
     }

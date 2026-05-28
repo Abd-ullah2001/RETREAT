@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { requireSupabase } from '@/lib/supabase';
 import { verifyAuth } from '@/lib/api';
 import type { User } from '@/types';
 
@@ -22,6 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const supabase = requireSupabase();
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       if (data.session?.access_token) {
@@ -52,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signInWithGoogle = async () => {
+    const supabase = requireSupabase();
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/auth/callback` },
@@ -59,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    const supabase = requireSupabase();
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);

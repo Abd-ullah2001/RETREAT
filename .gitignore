@@ -17,3 +17,6 @@ __pycache__
 *.pyc
 .env.local
 .next
+.github
+gcp-key.json
+

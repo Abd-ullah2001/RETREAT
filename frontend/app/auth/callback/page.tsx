@@ -2,13 +2,14 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { requireSupabase } from '@/lib/supabase';
 import { verifyAuth } from '@/lib/api';
 
 export default function AuthCallbackPage() {
   const router = useRouter();
 
   useEffect(() => {
+    const supabase = requireSupabase();
     supabase.auth.getSession().then(async ({ data }) => {
       if (data.session?.access_token) {
         try {
