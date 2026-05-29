@@ -1,23 +1,31 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import { scaleIn } from '@/lib/animations';
 import { cn } from '@/lib/utils';
 
 const colors: Record<string, string> = {
-  planning: 'bg-brand-muted/20 text-brand-muted',
-  active: 'bg-brand-primary/20 text-brand-primary',
-  completed: 'bg-brand-teal/20 text-brand-teal',
-  draft: 'bg-brand-accent/20 text-brand-accent',
-  sent: 'bg-brand-teal/20 text-brand-teal',
+  draft: 'bg-gold-100 text-gold-400',
+  sent: 'bg-emerald-100 text-emerald-600',
+  planning: 'bg-ocean-100 text-ocean-500',
+  active: 'bg-ember-100 text-ember-500',
+  completed: 'bg-slate-200 text-navy-700',
 };
 
 export function StatusBadge({ status }: { status: string }) {
+  const isActive = status === 'active';
+
   return (
     <motion.span
-      initial={{ scale: 0.8, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      className={cn('px-2 py-0.5 rounded-full text-xs font-medium capitalize', colors[status] ?? colors.planning)}
+      variants={scaleIn}
+      initial="initial"
+      animate="animate"
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold capitalize',
+        colors[status] ?? colors.planning,
+      )}
     >
+      <span className={cn('h-1.5 w-1.5 rounded-full bg-current', isActive && 'animate-pulse')} />
       {status}
     </motion.span>
   );

@@ -40,6 +40,20 @@ export async function getMe() {
   return data.user;
 }
 
+export interface PlaceSuggestion {
+  display_name: string;
+  lat: string;
+  lon: string;
+}
+
+export async function searchPlaces(query: string) {
+  const res = await axios.get<PlaceSuggestion[]>('https://nominatim.openstreetmap.org/search', {
+    params: { q: query, format: 'json', limit: 5 },
+    headers: { 'Accept-Language': 'en' },
+  });
+  return res.data;
+}
+
 export async function searchProperties(params: {
   destination: string;
   destId?: string;

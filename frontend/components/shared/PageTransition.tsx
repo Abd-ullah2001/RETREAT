@@ -2,22 +2,11 @@
 
 import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
-
-const pageVariants = {
-  initial: { opacity: 0, y: 24 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -24 },
-};
+import { pageVariants } from '@/lib/animations';
 
 export function PageTransition({ children }: { children: ReactNode }) {
   return (
-    <motion.div
-      variants={pageVariants}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-      transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
-    >
+    <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
       {children}
     </motion.div>
   );

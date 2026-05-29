@@ -2,14 +2,14 @@
 
 import { use } from 'react';
 import dynamic from 'next/dynamic';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PageTransition } from '@/components/shared/PageTransition';
-import { Navbar } from '@/components/shared/Navbar';
-import { PropertyStack } from '@/components/trip/PropertyStack';
-import { ItineraryPanel } from '@/components/trip/ItineraryPanel';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ActivityGrid } from '@/components/trip/ActivityGrid';
-import { useRetreatStore } from '@/lib/store';
+import { ItineraryPanel } from '@/components/trip/ItineraryPanel';
+import { Navbar } from '@/components/shared/Navbar';
+import { PageTransition } from '@/components/shared/PageTransition';
+import { PropertyStack } from '@/components/trip/PropertyStack';
 import { generateItinerary, getTrip, searchActivities, searchProperties } from '@/lib/api';
+import { useRetreatStore } from '@/lib/store';
 
 const MapView = dynamic(() => import('@/components/trip/MapView'), { ssr: false });
 
@@ -36,17 +36,14 @@ export default function TripDetailPage({ params }: { params: Promise<{ tripId: s
       }
       return t;
     },
+    refetchOnWindowFocus: false,
   });
 
   const { data: activitiesData } = useQuery({
     queryKey: ['activities', trip?.destination_lat, trip?.destination_lng],
-    queryFn: () =>
-      searchActivities({
-        lat: trip!.destination_lat,
-        lng: trip!.destination_lng,
-        radius: 5000,
-      }),
+    queryFn: () => searchActivities({ lat: trip!.destination_lat, lng: trip!.destination_lng, radius: 5000 }),
     enabled: !!trip,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 
   const itineraryMutation = useMutation({
@@ -56,8 +53,8 @@ export default function TripDetailPage({ params }: { params: Promise<{ tripId: s
 
   if (isLoading || !trip) {
     return (
-      <div className="min-h-screen bg-brand-dark flex items-center justify-center">
-        <p className="text-brand-muted">Loading trip...</p>
+      <div className="gradient-mesh flex min-h-screen items-center justify-center">
+        <p className="font-mono text-sm text-slate-400">Loading trip...</p>
       </div>
     );
   }
@@ -67,28 +64,31 @@ export default function TripDetailPage({ params }: { params: Promise<{ tripId: s
 
   return (
     <PageTransition>
-      <div className="min-h-screen bg-brand-dark">
+      <div className="gradient-mesh min-h-screen">
         <Navbar />
-        <main className="max-w-7xl mx-auto px-4 py-6">
-          <h1 className="font-[family-name:var(--font-syne)] text-2xl font-bold mb-6">{trip.destination}</h1>
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-4">
-              <PropertyStack tripId={tripId} properties={properties} />
+        <main className="mx-auto max-w-[1480px] px-4 py-5">
+          <div className="mb-5 flex flex-col justify-between gap-2 md:flex-row md:items-end">
+            <div>
+              <h1 className="text-4xl font-semibold text-navy-900">{trip.destination}</h1>
+              <p className="font-mono text-sm text-slate-400">{trip.checkin} - {trip.checkout} / {trip.guests} guests</p>
             </div>
-            <div className="lg:col-span-5">
-              <ItineraryPanel
-                itinerary={trip.itinerary}
-                loading={itineraryMutation.isPending}
-                onGenerate={() => itineraryMutation.mutate()}
-              />
-              <div className="mt-6">
-                <h3 className="text-sm font-semibold text-brand-muted mb-2">Nearby activities</h3>
+          </div>
+          <div className="grid min-h-[calc(100vh-150px)] grid-cols-1 gap-5 xl:grid-cols-[380px_minmax(0,1fr)_320px]">
+            <aside className="min-h-0 overflow-y-auto pb-4">
+              <PropertyStack tripId={tripId} properties={properties} />
+            </aside>
+            <section className="min-h-0 overflow-y-auto pb-4">
+              <ItineraryPanel itinerary={trip.itinerary} loading={itineraryMutation.isPending} onGenerate={() => itineraryMutation.mutate()} />
+              <div className="elevated-card mt-6 p-5">
+                <h3 className="mb-3 text-lg font-semibold text-navy-800">Nearby activities</h3>
                 <ActivityGrid activities={activities} />
               </div>
-            </div>
-            <div className="lg:col-span-3 h-[400px]">
-              <MapView center={center} properties={properties} activities={activities} />
-            </div>
+            </section>
+            <aside className="hidden min-h-0 xl:block">
+              <div className="sticky top-20 h-[calc(100vh-110px)]">
+                <MapView center={center} properties={properties} activities={activities} />
+              </div>
+            </aside>
           </div>
         </main>
       </div>

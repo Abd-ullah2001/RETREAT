@@ -1,7 +1,9 @@
 'use client';
 
-import { motion, animate } from 'framer-motion';
+import { animate, motion } from 'framer-motion';
+import { Bookmark, MapPin, MessageCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { cardVariants } from '@/lib/animations';
 
 function AnimatedCounter({ value }: { value: number }) {
   const [display, setDisplay] = useState(0);
@@ -28,27 +30,39 @@ export function StatsBanner({
   destinations: number;
 }) {
   const stats = [
-    { label: 'Trips planned', value: trips },
-    { label: 'Inquiries sent', value: inquiries },
-    { label: 'Destinations explored', value: destinations },
+    { label: 'Trips Planned', value: trips, icon: MapPin, color: 'text-ocean-500', note: 'Itineraries in motion' },
+    { label: 'Inquiries Sent', value: inquiries, icon: MessageCircle, color: 'text-emerald-600', note: 'Host conversations tracked' },
+    { label: 'Places Saved', value: destinations, icon: Bookmark, color: 'text-ember-500', note: 'Destinations under review' },
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      {stats.map((stat, i) => (
-        <motion.div
-          key={stat.label}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.1 }}
-          className="p-6 rounded-2xl bg-brand-card border border-brand-border"
-        >
-          <p className="text-3xl font-bold text-brand-accent font-[family-name:var(--font-syne)]">
-            <AnimatedCounter value={stat.value} />
-          </p>
-          <p className="text-sm text-brand-muted mt-1">{stat.label}</p>
-        </motion.div>
-      ))}
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      {stats.map((stat, i) => {
+        const Icon = stat.icon;
+        return (
+          <motion.div
+            key={stat.label}
+            custom={i}
+            variants={cardVariants}
+            initial="initial"
+            animate="animate"
+            whileHover="hover"
+            className="elevated-card elevated-card-hover overflow-hidden p-6"
+            style={{ willChange: 'transform' }}
+          >
+            <div className="flex items-start justify-between">
+              <p className="font-mono text-4xl font-medium text-navy-900">
+                <AnimatedCounter value={stat.value} />
+              </p>
+              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-ivory-100">
+                <Icon className={`h-5 w-5 ${stat.color}`} />
+              </span>
+            </div>
+            <p className="mt-2 text-sm font-semibold text-navy-800">{stat.label}</p>
+            <p className="mt-1 text-xs text-slate-400">{stat.note}</p>
+          </motion.div>
+        );
+      })}
     </div>
   );
 }

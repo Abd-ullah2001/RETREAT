@@ -1,23 +1,23 @@
 'use client';
 
 import { motion } from 'framer-motion';
-
-const orbs = [
-  { color: 'bg-brand-primary/15', size: 'w-72 h-72', top: '10%', left: '5%', delay: 0 },
-  { color: 'bg-brand-secondary/15', size: 'w-96 h-96', top: '40%', right: '10%', delay: 2 },
-  { color: 'bg-brand-teal/15', size: 'w-64 h-64', bottom: '10%', left: '30%', delay: 4 },
-];
+import { floatOrb } from '@/lib/animations';
 
 export function FloatingOrbs() {
+  const orbs = [
+    'left-[4%] top-[12%] h-[320px] w-[320px] bg-ocean-300/12',
+    'right-[6%] top-[16%] h-[260px] w-[260px] bg-ember-400/8',
+    'bottom-[8%] left-[42%] h-[300px] w-[300px] bg-emerald-500/8',
+  ];
+
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {orbs.map((orb, i) => (
+    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+      {orbs.map((classes, index) => (
         <motion.div
-          key={i}
-          className={`absolute rounded-full blur-3xl ${orb.color} ${orb.size}`}
-          style={{ top: orb.top, left: orb.left, right: orb.right, bottom: orb.bottom }}
-          animate={{ x: [0, 30, 0], y: [0, -20, 0] }}
-          transition={{ repeat: Infinity, duration: 8, ease: 'easeInOut', delay: orb.delay }}
+          key={classes}
+          variants={floatOrb(index * 2)}
+          animate="animate"
+          className={`absolute rounded-full blur-[80px] ${classes}`}
         />
       ))}
     </div>

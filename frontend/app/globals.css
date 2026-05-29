@@ -1,14 +1,33 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-primary: #5b4ee8;
-  --color-brand-secondary: #ff6b6b;
-  --color-brand-accent: #ffd93d;
-  --color-brand-teal: #4ecdc4;
-  --color-brand-dark: #0f0e17;
-  --color-brand-card: #1a1826;
-  --color-brand-border: #2d2b3d;
-  --color-brand-muted: #6b6880;
+  --color-ivory-50: #FDFCF8;
+  --color-ivory-100: #F8F5EE;
+  --color-ivory-200: #F0EBE0;
+  --color-ivory-300: #E3DAC9;
+  --color-navy-900: #0D1B2A;
+  --color-navy-800: #1B2D42;
+  --color-navy-700: #243B55;
+  --color-navy-600: #2E5077;
+  --color-navy-500: #3A6FA8;
+  --color-ocean-500: #1A7FA8;
+  --color-ocean-400: #2E9DC7;
+  --color-ocean-300: #56B8D8;
+  --color-ocean-100: #E0F4FB;
+  --color-ember-500: #D4622A;
+  --color-ember-400: #E07A48;
+  --color-ember-100: #FAE8DF;
+  --color-emerald-600: #1A7A5E;
+  --color-emerald-500: #22A07A;
+  --color-emerald-100: #D6F5EC;
+  --color-gold-400: #C9A84C;
+  --color-gold-100: #F5EDD3;
+  --color-slate-400: #94A3B8;
+  --color-slate-300: #CBD5E1;
+  --color-slate-200: #E2E8F0;
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
 }
 
 html,
@@ -18,21 +37,86 @@ body {
 }
 
 body {
-  background: #0f0e17;
-  color: #ffffff;
-  font-family: var(--font-inter), system-ui, sans-serif;
+  background: #FDFCF8;
+  color: #0D1B2A;
+  font-family: var(--font-body), system-ui, sans-serif;
 }
 
 h1,
 h2,
 h3,
 h4 {
-  font-family: var(--font-syne), system-ui, sans-serif;
+  font-family: var(--font-display), Georgia, serif;
+  letter-spacing: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }
 
 .leaflet-container {
   width: 100%;
   height: 100%;
-  border-radius: 16px;
+  border-radius: 20px;
   z-index: 0;
+}
+
+.glass-card {
+  background: rgba(253, 252, 248, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(227, 218, 201, 0.6);
+  box-shadow: 0 4px 24px rgba(13, 27, 42, 0.06), 0 1px 4px rgba(13, 27, 42, 0.04);
+}
+
+.glass-card-navy {
+  background: rgba(13, 27, 42, 0.82);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(58, 111, 168, 0.25);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+}
+
+.elevated-card {
+  background: #FDFCF8;
+  border: 1px solid #E3DAC9;
+  box-shadow: 0 2px 8px rgba(13, 27, 42, 0.06), 0 1px 2px rgba(13, 27, 42, 0.04);
+  border-radius: 20px;
+}
+
+.elevated-card-hover {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.elevated-card-hover:hover {
+  box-shadow: 0 12px 40px rgba(13, 27, 42, 0.12), 0 4px 12px rgba(13, 27, 42, 0.06);
+}
+
+.gradient-mesh {
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(26, 127, 168, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(212, 98, 42, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, rgba(26, 122, 94, 0.05) 0%, transparent 50%),
+    #FDFCF8;
+}
+
+.text-gradient-ocean {
+  background: linear-gradient(135deg, #1A7FA8, #2E9DC7, #1A7A5E);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-warm {
+  background: linear-gradient(135deg, #0D1B2A, #D4622A);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.property-pin div,
+.activity-pin div {
+  box-shadow: 0 8px 24px rgba(13, 27, 42, 0.2);
 }

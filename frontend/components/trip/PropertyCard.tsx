@@ -1,8 +1,9 @@
 'use client';
 
+import Image from 'next/image';
+import { ExternalLink, Heart, MapPin, Star, X } from 'lucide-react';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
 import type { Property } from '@/types';
-import { Star } from 'lucide-react';
 
 interface PropertyCardProps {
   property: Property;
@@ -12,68 +13,75 @@ interface PropertyCardProps {
 
 export function PropertyCard({ property, index, onSwipe }: PropertyCardProps) {
   const x = useMotionValue(0);
-  const rotate = useTransform(x, [-200, 200], [-15, 15]);
+  const rotate = useTransform(x, [-200, 200], [-12, 12]);
   const greenOpacity = useTransform(x, [0, 120], [0, 1]);
   const redOpacity = useTransform(x, [-120, 0], [1, 0]);
 
   const handleDragEnd = (_: unknown, info: { offset: { x: number } }) => {
-    if (info.offset.x > 120) onSwipe('right');
-    else if (info.offset.x < -120) onSwipe('left');
+    if (info.offset.x > 100) onSwipe('right');
+    else if (info.offset.x < -100) onSwipe('left');
   };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 32 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, y: 32, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ delay: index * 0.08 }}
-      style={{ x, rotate }}
+      style={{ x, rotate, willChange: 'transform' }}
       drag="x"
       dragConstraints={{ left: 0, right: 0 }}
       onDragEnd={handleDragEnd}
-      whileHover={{ y: -4, boxShadow: '0 20px 60px rgba(91,78,232,0.25)' }}
-      className="relative w-full max-w-sm mx-auto rounded-[20px] bg-brand-card border border-brand-border overflow-hidden cursor-grab active:cursor-grabbing"
+      whileHover={{ y: -4 }}
+      className="elevated-card relative mx-auto h-[560px] w-full max-w-sm cursor-grab overflow-hidden active:cursor-grabbing"
     >
-      <motion.div className="absolute inset-0 bg-green-500/20 pointer-events-none z-10" style={{ opacity: greenOpacity }} />
-      <motion.div className="absolute inset-0 bg-red-500/20 pointer-events-none z-10" style={{ opacity: redOpacity }} />
-      <motion.span className="absolute top-4 right-4 text-4xl z-20" style={{ opacity: greenOpacity }}>
-        ❤️
+      <motion.div className="absolute inset-0 z-10 bg-emerald-100 pointer-events-none" style={{ opacity: greenOpacity }} />
+      <motion.div className="absolute inset-0 z-10 bg-ember-100 pointer-events-none" style={{ opacity: redOpacity }} />
+      <motion.span className="absolute right-6 top-6 z-20 grid h-14 w-14 place-items-center rounded-full bg-emerald-500 text-white shadow-lg" style={{ opacity: greenOpacity }}>
+        <Heart className="h-7 w-7 fill-current" />
       </motion.span>
-      <motion.span className="absolute top-4 left-4 text-4xl z-20" style={{ opacity: redOpacity }}>
-        ❌
+      <motion.span className="absolute left-6 top-6 z-20 grid h-14 w-14 place-items-center rounded-full bg-ember-500 text-white shadow-lg" style={{ opacity: redOpacity }}>
+        <X className="h-7 w-7" />
       </motion.span>
-      <div className="h-48 overflow-hidden">
+
+      <div className="relative h-[52%] overflow-hidden">
         {property.imageUrls[0] ? (
-          <img src={property.imageUrls[0]} alt="" className="w-full h-full object-cover" />
+          <Image src={property.imageUrls[0]} alt={property.name} fill sizes="(max-width: 768px) 100vw, 380px" className="object-cover" unoptimized />
         ) : (
-          <div className="w-full h-full bg-brand-border" />
+          <div className="h-full w-full bg-ivory-200" />
         )}
+        <span className="absolute left-4 top-4 rounded-full bg-ivory-50/85 px-3 py-1 text-xs font-semibold capitalize text-navy-800">
+          {property.platform === 'booking' ? 'Booking.com' : 'Airbnb'}
+        </span>
+        <span className="absolute right-4 top-4 rounded-full bg-navy-900/75 px-3 py-1 font-mono text-xs text-white">
+          {property.reviewCount ?? 0} reviews
+        </span>
       </div>
-      <div className="p-4">
-        <h3 className="font-[family-name:var(--font-syne)] text-lg font-bold">{property.name}</h3>
-        <p className="text-2xl font-bold text-brand-accent mt-1">
-          {property.currency} {property.pricePerNight}
-          <span className="text-sm text-brand-muted font-normal"> / night</span>
+
+      <div className="relative z-20 flex h-[48%] flex-col p-5">
+        <h3 className="line-clamp-2 text-xl font-semibold text-navy-800">{property.name}</h3>
+        <p className="mt-2 flex items-center gap-1 text-sm text-slate-400">
+          <MapPin className="h-4 w-4" /> <span className="line-clamp-1">{property.address}</span>
         </p>
         {property.rating != null && (
-          <div className="flex items-center gap-1 mt-2 text-sm text-brand-muted">
-            <Star className="w-4 h-4 fill-brand-accent text-brand-accent" />
-            {property.rating} ({property.reviewCount ?? 0} reviews)
+          <div className="mt-3 flex items-center gap-1 text-sm text-navy-700">
+            <Star className="h-4 w-4 fill-gold-400 text-gold-400" />
+            <span className="font-mono">{property.rating}</span>
+            <span className="text-slate-400">({property.reviewCount ?? 0})</span>
           </div>
         )}
-        <div className="flex flex-wrap gap-1 mt-3">
+        <p className="mt-3 font-mono text-3xl font-medium text-navy-900">
+          {property.currency} {property.pricePerNight}
+          <span className="text-sm font-normal text-slate-400"> /night</span>
+        </p>
+        <div className="mt-4 flex flex-wrap gap-1.5">
           {property.amenities.slice(0, 4).map((a) => (
-            <span key={a} className="text-xs px-2 py-0.5 rounded-full bg-brand-border text-brand-muted">
+            <span key={a} className="rounded-full bg-ivory-200 px-2.5 py-1 text-xs text-navy-700">
               {a}
             </span>
           ))}
         </div>
-        <a
-          href={property.bookingUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block mt-3 text-sm text-brand-primary hover:underline"
-        >
-          View on {property.platform === 'booking' ? 'Booking.com' : 'Airbnb'} →
+        <a href={property.bookingUrl} target="_blank" rel="noopener noreferrer" className="mt-auto inline-flex items-center gap-1 text-sm font-semibold text-ocean-500">
+          View listing <ExternalLink className="h-3.5 w-3.5" />
         </a>
       </div>
     </motion.div>
