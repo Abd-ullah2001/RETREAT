@@ -26,13 +26,17 @@ export default function TripDetailPage({ params }: { params: Promise<{ tripId: s
       const t = await getTrip(tripId);
       setCurrentTrip(t);
       if (properties.length === 0) {
-        const { properties: props } = await searchProperties({
-          destination: t.destination,
-          checkin: t.checkin,
-          checkout: t.checkout,
-          guests: t.guests,
-        });
-        setProperties(props);
+        try {
+          const { properties: props } = await searchProperties({
+            destination: t.destination,
+            checkin: t.checkin,
+            checkout: t.checkout,
+            guests: t.guests,
+          });
+          setProperties(props);
+        } catch (err) {
+          console.warn('Property search failed', err);
+        }
       }
       return t;
     },

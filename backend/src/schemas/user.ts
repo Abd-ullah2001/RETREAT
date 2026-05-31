@@ -14,6 +14,11 @@ export const VerifyBodySchema = z.object({
   access_token: z.string().min(1),
 });
 
+export const SignUpBodySchema = z.object({
+  email: z.string().min(1),
+  password: z.string().min(6),
+});
+
 export const VerifyResponseSchema = z.object({
   user: UserSchema,
 });

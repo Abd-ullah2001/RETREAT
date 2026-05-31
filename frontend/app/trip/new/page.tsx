@@ -36,9 +36,15 @@ function NewTripContent() {
           checkout,
           guests: parsedGuests,
         });
-        const { properties } = await searchProperties({ destination, checkin, checkout, guests: parsedGuests });
-        setProperties(properties);
         router.replace(`/trip/${trip.id}`);
+        void (async () => {
+          try {
+            const { properties } = await searchProperties({ destination, checkin, checkout, guests: parsedGuests });
+            setProperties(properties);
+          } catch {
+            // Ignore property search failures after redirect; trip is created and user can retry on trip page.
+          }
+        })();
       } catch {
         setError('Failed to create trip. Please try again.');
       }

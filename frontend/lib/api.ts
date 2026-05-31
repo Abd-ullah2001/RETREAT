@@ -3,7 +3,7 @@ import { requireSupabase } from './supabase';
 import type { Activity, Inquiry, Property, Trip, User } from '@/types';
 
 const api: AxiosInstance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL,
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
 });
 
 api.interceptors.request.use(async (config) => {

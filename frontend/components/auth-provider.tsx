@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { requireSupabase } from '@/lib/supabase';
-import { verifyAuth } from '@/lib/api';
+import api, { verifyAuth } from '@/lib/api';
 import type { User } from '@/types';
 
 interface AuthContextValue {
@@ -62,9 +62,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const normalizeAuthIdentifier = (value: string) => {
+    const raw = value.trim();
+    const [local, domain] = raw.split('@');
+    const normalizedLocal = local.trim().replace(/\s+/g, '_') || 'user';
+    if (!domain || domain.trim() === '') {
+      return `${normalizedLocal}@retreat.local`;
+    }
+
+    const cleanedDomain = domain.trim().replace(/\s+/g, '');
+    const normalizedDomain = cleanedDomain.includes('.') ? cleanedDomain : `${cleanedDomain || 'retreat'}.local`;
+    return `${normalizedLocal}@${normalizedDomain}`;
+  };
+
   const signInWithEmail = async (email: string, password: string) => {
     const supabase = requireSupabase();
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const authEmail = normalizeAuthIdentifier(email);
+    const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail, password });
     if (error) throw error;
     setSession(data.session);
     if (data.session?.access_token) {
@@ -73,17 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUpWithEmail = async (email: string, password: string) => {
-    const supabase = requireSupabase();
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-    });
-    if (error) throw error;
-    setSession(data.session);
-    if (data.session?.access_token) {
-      setUser(await verifyAuth(data.session.access_token));
-    }
+    const authEmail = normalizeAuthIdentifier(email);
+    // Create account on the backend but do NOT sign the user in automatically.
+    // Users should explicitly log in after signing up.
+    await api.post('/api/v1/auth/signup', { email: authEmail, password });
   };
 
   const signOut = async () => {

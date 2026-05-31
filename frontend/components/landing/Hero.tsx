@@ -15,7 +15,9 @@ export function Hero() {
   const [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState<'signup' | 'signin'>('signup');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [signupAttempts, setSignupAttempts] = useState(0);
 
   useEffect(() => {
     if (session && !loading) {
@@ -26,15 +28,22 @@ export function Hero() {
   const handleEmailAuth = async (event: FormEvent) => {
     event.preventDefault();
     setAuthError(null);
+    setAuthSuccess(null);
     setAuthLoading(true);
     try {
       if (authMode === 'signup') {
         await signUpWithEmail(email, password);
+        setAuthSuccess('Account created successfully. Please log in to continue.');
+        setAuthMode('signin');
+        setSignupAttempts(0);
       } else {
         await signInWithEmail(email, password);
+        router.push('/dashboard');
       }
-      router.push('/dashboard');
     } catch (error) {
+      if (authMode === 'signup') {
+        setSignupAttempts((attempts) => Math.min(attempts + 1, 20));
+      }
       setAuthError(error instanceof Error ? error.message : 'Authentication failed. Please try again.');
     } finally {
       setAuthLoading(false);
@@ -123,7 +132,7 @@ export function Hero() {
               <label className="relative">
                 <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" />
                 <input
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="Email address"
@@ -142,6 +151,12 @@ export function Hero() {
               />
             </div>
             {authError && <p className="mt-3 text-sm text-ember-400">{authError}</p>}
+            {authSuccess && <p className="mt-3 text-sm text-emerald-400">{authSuccess}</p>}
+            {authMode === 'signup' && signupAttempts > 0 && (
+              <p className="mt-3 text-sm text-slate-300">
+                Signup attempts used: {signupAttempts}/20. Enter any identifier and password to continue.
+              </p>
+            )}
             <div className="mt-4 flex flex-col gap-3 sm:flex-row">
               <motion.button
                 type="submit"

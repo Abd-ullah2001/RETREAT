@@ -5,7 +5,6 @@
 import Fastify from 'fastify';
 import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
-import rateLimit from '@fastify/rate-limit';
 import * as Sentry from '@sentry/node';
 import { config } from './config.js';
 import logger from './lib/logger.js';
@@ -36,11 +35,6 @@ async function buildServer() {
   await app.register(cors, {
     origin: config.FRONTEND_URL,
     credentials: true,
-  });
-
-  await app.register(rateLimit, {
-    max: 100,
-    timeWindow: '1 minute',
   });
 
   // API v1 routes
