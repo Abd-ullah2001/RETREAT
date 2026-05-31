@@ -1,8 +1,10 @@
 import { FeatureSections, Hero } from '@/components/landing/Hero';
+import { SessionExpiredToast } from '@/components/shared/SessionExpiredToast';
 
 export default function LandingPage() {
   return (
     <main>
+      <SessionExpiredToast />
       <Hero />
       <FeatureSections />
       <section className="bg-navy-800 px-6 py-20 text-center text-white">

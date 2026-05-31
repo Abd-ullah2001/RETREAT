@@ -17,6 +17,7 @@ export default function AuthCallbackPage() {
           await verifyAuth(data.session.access_token);
           router.replace('/dashboard');
         } catch {
+          await supabase.auth.signOut();
           router.replace('/');
         }
       } else {

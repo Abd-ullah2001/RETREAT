@@ -25,13 +25,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const supabase = requireSupabase();
+
+    const clearSession = async () => {
+      await supabase.auth.signOut();
+      setSession(null);
+      setUser(null);
+      setLoading(false);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('retreat.session_expired', 'true');
+        window.location.href = '/';
+      }
+    };
+
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       if (data.session?.access_token) {
         verifyAuth(data.session.access_token)
-          .then(setUser)
-          .catch(() => setUser(null))
-          .finally(() => setLoading(false));
+          .then((profile) => {
+            if (profile) {
+              setUser(profile);
+            } else {
+              void clearSession();
+            }
+          })
+          .catch(() => void clearSession())
+          .finally(() => {
+            setLoading(false);
+          });
       } else {
         setLoading(false);
       }
@@ -42,9 +62,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (newSession?.access_token) {
         try {
           const profile = await verifyAuth(newSession.access_token);
-          setUser(profile);
+          if (profile) {
+            setUser(profile);
+          } else {
+            await clearSession();
+          }
         } catch {
-          setUser(null);
+          await clearSession();
         }
       } else {
         setUser(null);
