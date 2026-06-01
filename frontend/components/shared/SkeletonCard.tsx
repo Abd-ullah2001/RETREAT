@@ -8,11 +8,7 @@ export function SkeletonCard() {
     <motion.div
       variants={shimmer}
       animate="animate"
-      className="h-24 rounded-2xl"
-      style={{
-        background: 'linear-gradient(90deg, #E3DAC9 25%, #F0EBE0 50%, #E3DAC9 75%)',
-        backgroundSize: '400% 100%',
-      }}
+      className="skeleton h-24 rounded-2xl"
     />
   );
 }

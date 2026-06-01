@@ -1,15 +1,5 @@
 import { create } from 'zustand';
-import type { Property, Trip } from '@/types';
-
-interface SearchParams {
-  destination: string;
-  lat: number;
-  lng: number;
-  checkin: string;
-  checkout: string;
-  guests: number;
-  destId?: string;
-}
+import type { Property, SearchParams, Trip } from '@/types';
 
 interface RetreatState {
   searchParams: SearchParams | null;
@@ -22,8 +12,21 @@ interface RetreatState {
   interestedPropertyIds: Set<string>;
   markInterested: (id: string) => void;
   markSkipped: (id: string) => void;
+  resetSwipeState: () => void;
   mapSelectedId: string | null;
-  setMapSelectedId: (id: string | null) => void;
+  mapSelectedType: 'property' | 'activity' | null;
+  setMapSelected: (id: string | null, type: 'property' | 'activity' | null) => void;
+  inquiryModalOpen: boolean;
+  inquiryProperty: Property | null;
+  openInquiryModal: (property: Property) => void;
+  closeInquiryModal: () => void;
+  onboardingData: {
+    name: string;
+    travelStyle: string;
+    interests: string[];
+    budget: string;
+  };
+  setOnboardingData: (data: Partial<RetreatState['onboardingData']>) => void;
 }
 
 export const useRetreatStore = create<RetreatState>((set, get) => ({
@@ -47,6 +50,19 @@ export const useRetreatStore = create<RetreatState>((set, get) => ({
     swiped.add(id);
     set({ swipedPropertyIds: swiped });
   },
+  resetSwipeState: () => set({ swipedPropertyIds: new Set(), interestedPropertyIds: new Set() }),
   mapSelectedId: null,
-  setMapSelectedId: (mapSelectedId) => set({ mapSelectedId }),
+  mapSelectedType: null,
+  setMapSelected: (mapSelectedId, mapSelectedType) => set({ mapSelectedId, mapSelectedType }),
+  inquiryModalOpen: false,
+  inquiryProperty: null,
+  openInquiryModal: (inquiryProperty) => set({ inquiryModalOpen: true, inquiryProperty }),
+  closeInquiryModal: () => set({ inquiryModalOpen: false, inquiryProperty: null }),
+  onboardingData: {
+    name: '',
+    travelStyle: 'relaxation',
+    interests: [],
+    budget: 'comfort',
+  },
+  setOnboardingData: (data) => set((state) => ({ onboardingData: { ...state.onboardingData, ...data } })),
 }));

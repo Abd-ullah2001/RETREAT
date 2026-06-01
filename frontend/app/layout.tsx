@@ -32,8 +32,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${playfair.variable} ${dmSans.variable} ${dmMono.variable}`}>
-      <body>
+    <html lang="en" className={`${playfair.variable} ${dmSans.variable} ${dmMono.variable}`} suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <Providers>
           <LayoutClient>{children}</LayoutClient>
         </Providers>

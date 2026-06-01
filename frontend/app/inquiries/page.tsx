@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ExternalLink } from 'lucide-react';
 import { Navbar } from '@/components/shared/Navbar';
@@ -10,15 +10,32 @@ import { StatusBadge } from '@/components/shared/StatusBadge';
 import { getInquiries } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/components/auth-provider';
 
 type Filter = 'all' | 'sent' | 'draft';
 
 export default function InquiriesPage() {
+  const router = useRouter();
+  const { user, session, loading } = useAuth();
   const [filter, setFilter] = useState<Filter>('all');
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loading && !session) {
+      router.replace('/');
+      return;
+    }
+
+    if (!loading && session && user && !user.onboarding_completed) {
+      router.replace('/onboarding');
+    }
+  }, [loading, session, user, router]);
+
   const { data: inquiries = [], isLoading } = useQuery({
     queryKey: ['inquiries'],
     queryFn: getInquiries,
+    enabled: !!session,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -26,19 +43,20 @@ export default function InquiriesPage() {
 
   return (
     <PageTransition>
-      <div className="gradient-mesh min-h-screen">
+      <div className="page-bg min-h-screen">
         <Navbar />
         <main className="mx-auto max-w-4xl px-6 py-10">
           <header>
-            <h1 className="text-4xl font-semibold text-navy-800">Inquiry Tracker</h1>
+            <p className="eyebrow">Inquiry tracker</p>
+            <h1 className="mt-3 font-display text-4xl font-semibold text-navy-800">Your Inquiries</h1>
             <p className="mt-2 text-slate-400">Track all your property inquiries</p>
           </header>
           <div className="mt-8 inline-flex rounded-full bg-ivory-200 p-1">
             {(['all', 'sent', 'draft'] as const).map((tab) => (
-              <button key={tab} type="button" onClick={() => setFilter(tab)} className="relative rounded-full px-5 py-2 text-sm font-semibold capitalize">
+              <motion.button key={tab} type="button" whileTap={{ scale: 0.97 }} onClick={() => setFilter(tab)} className="relative rounded-full px-5 py-2 text-sm font-semibold capitalize">
                 {filter === tab && <motion.span layoutId="inquiry-tab" className="absolute inset-0 rounded-full bg-navy-900" />}
                 <span className={`relative z-10 ${filter === tab ? 'text-white' : 'text-navy-700'}`}>{tab}</span>
-              </button>
+              </motion.button>
             ))}
           </div>
 
@@ -62,7 +80,7 @@ export default function InquiriesPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <h3 className="truncate text-xl font-semibold text-navy-800">{property?.name ?? 'Property'}</h3>
+                          <h3 className="truncate font-display text-xl font-semibold text-navy-800">{property?.name ?? 'Property'}</h3>
                           <p className="font-mono text-xs text-slate-400">{formatDate(inq.created_at)}</p>
                         </div>
                         <StatusBadge status={inq.status} />
@@ -93,8 +111,8 @@ export default function InquiriesPage() {
           </div>
           {!isLoading && visible.length === 0 && (
             <div className="elevated-card mt-8 p-8 text-center">
-              <h2 className="text-2xl font-semibold text-slate-400">No inquiries yet</h2>
-              <a href="/dashboard" className="mt-4 inline-flex rounded-full bg-ember-500 px-5 py-3 font-semibold text-white">
+              <h2 className="font-display text-2xl font-semibold text-slate-400">No inquiries yet</h2>
+              <a href="/dashboard" className="btn-primary mt-4 inline-flex">
                 Go back to planning
               </a>
             </div>

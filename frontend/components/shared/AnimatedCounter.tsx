@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { animate, motion } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
+import { animate, motion, useInView } from 'framer-motion';
 
 interface AnimatedCounterProps {
   from?: number;
@@ -20,21 +20,24 @@ export function AnimatedCounter({
   prefix = '',
   decimals = 0,
 }: AnimatedCounterProps) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const inView = useInView(ref, { once: true, margin: '-40px' });
   const [display, setDisplay] = useState(from);
 
   useEffect(() => {
+    if (!inView) return;
     const controls = animate(from, to, {
       duration,
       ease: 'easeOut',
       onUpdate: setDisplay,
     });
     return () => controls.stop();
-  }, [duration, from, to]);
+  }, [duration, from, inView, to]);
 
   const value = decimals === 0 ? Math.round(display).toString() : display.toFixed(decimals);
 
   return (
-    <motion.span>
+    <motion.span ref={ref} className="font-mono">
       {prefix}
       {value}
       {suffix}

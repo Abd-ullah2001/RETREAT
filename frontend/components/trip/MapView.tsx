@@ -42,7 +42,7 @@ export default function MapView({ center, properties, activities }: MapViewProps
   ];
 
   return (
-    <MapContainer center={center} zoom={12} className="h-full min-h-[420px] w-full rounded-[20px]">
+    <MapContainer center={center} zoom={12} zoomControl={false} attributionControl={false} className="h-full min-h-[420px] w-full rounded-[20px]">
       <TileLayer
         attribution="© OpenStreetMap contributors © CARTO"
         url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"

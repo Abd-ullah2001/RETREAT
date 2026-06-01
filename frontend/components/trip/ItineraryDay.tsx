@@ -22,7 +22,7 @@ export function ItineraryDayRow({ day, index }: { day: Day; index: number }) {
       initial="initial"
       animate="animate"
       onClick={() => setOpen((value) => !value)}
-      className="elevated-card w-full border-l-[3px] border-l-ocean-500 p-4 text-left"
+      className="elevated-card w-full border-l-[3px] border-l-ember-500 p-4 text-left"
     >
       <div className="flex items-start justify-between gap-3">
         <div>

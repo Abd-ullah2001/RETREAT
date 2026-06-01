@@ -41,6 +41,30 @@ export async function getMe() {
   return data.user;
 }
 
+export async function completeOnboarding(body: {
+  name?: string;
+  travel_style?: string;
+  interests?: string[];
+  budget_tier?: string;
+} = {}) {
+  const { data } = await api.patch<{ user: User }>('/api/v1/auth/onboarding', {
+    ...body,
+    onboarding_completed: true,
+  });
+  return data.user;
+}
+
+export async function updateUserProfile(body: {
+  name?: string;
+  travel_style?: string;
+  interests?: string[];
+  budget_tier?: string;
+  onboarding_completed?: boolean;
+}) {
+  const { data } = await api.patch<{ user: User }>('/api/v1/auth/onboarding', body);
+  return data.user;
+}
+
 export interface PlaceSuggestion {
   display_name: string;
   lat: string;

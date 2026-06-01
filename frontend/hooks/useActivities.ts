@@ -6,5 +6,6 @@ export function useActivities(params: { lat: number; lng: number; radius?: numbe
     queryKey: ['activities', params.lat, params.lng, params.radius],
     queryFn: () => searchActivities(params),
     enabled: params.enabled ?? true,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 }

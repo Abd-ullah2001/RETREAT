@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, Bell, CalendarDays, CheckCircle2, Clock3, Compass, Home, Inbox, Map, MessageCircle, Plus, Sparkles } from 'lucide-react';
+import { ArrowRight, Bell, CheckCircle2, Clock3, Compass, Home, Inbox, Map, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Navbar } from '@/components/shared/Navbar';
 import { PageTransition } from '@/components/shared/PageTransition';
@@ -24,6 +24,12 @@ export default function DashboardPage() {
     if (!loading && !session) router.replace('/');
   }, [loading, session, router]);
 
+  useEffect(() => {
+    if (!loading && session && user && !user.onboarding_completed) {
+      router.replace('/onboarding');
+    }
+  }, [loading, session, user, router]);
+
   const { data: trips = [] } = useQuery({
     queryKey: ['trips'],
     queryFn: getTrips,
@@ -41,13 +47,12 @@ export default function DashboardPage() {
   const destinations = new Set(trips.map((t) => t.destination)).size;
   const sentInquiries = inquiries.filter((i) => i.status === 'sent').length;
   const pendingInquiries = inquiries.filter((i) => i.status === 'draft').length;
-  const latestTrip = trips[0];
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   if (loading || !session) {
     return (
-      <div className="gradient-mesh flex min-h-screen items-center justify-center">
+      <div className="page-bg flex min-h-screen items-center justify-center">
         <p className="font-mono text-sm text-slate-400">Loading...</p>
       </div>
     );
@@ -55,36 +60,27 @@ export default function DashboardPage() {
 
   return (
     <PageTransition>
-      <div className="gradient-mesh min-h-screen">
+      <div className="page-bg min-h-screen">
         <Navbar />
-        <div className="mx-auto grid max-w-[1500px] gap-6 px-4 py-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:px-6">
+        <div className="mx-auto grid max-w-6xl gap-6 px-8 py-10 lg:grid-cols-[220px_minmax(0,1fr)]">
           <DashboardRail pendingInquiries={pendingInquiries} />
           <main className="min-w-0 space-y-6">
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="elevated-card overflow-hidden p-6 md:p-8">
-                <div className="flex flex-col justify-between gap-6 md:flex-row md:items-start">
-                  <div>
-                    <p className="font-mono text-xs uppercase tracking-[0.2em] text-ocean-500">Operations center</p>
-                    <h1 className="mt-3 text-4xl font-semibold text-navy-900 md:text-5xl">
-                      {greeting}, {user?.name?.split(' ')[0] ?? 'Traveler'}
-                    </h1>
-                    <p className="mt-3 max-w-2xl text-navy-700">
-                      Trips, stay shortlists, host messages, and itinerary generation are now grouped into one command surface.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-navy-900 p-4 text-white">
-                    <p className="font-mono text-xs uppercase text-ocean-300">Today</p>
-                    <p className="mt-2 text-2xl font-semibold">{formatDate(new Date().toISOString())}</p>
-                    <p className="mt-1 text-sm text-slate-300">{pendingInquiries} inquiry drafts need review</p>
-                  </div>
-                </div>
-                <div className="mt-8 grid gap-3 md:grid-cols-3">
-                  <StatusTile icon={Sparkles} label="AI readiness" value={trips.length ? 'Ready to plan' : 'Waiting for trip'} tone="ocean" />
-                  <StatusTile icon={MessageCircle} label="Host pipeline" value={pendingInquiries ? `${pendingInquiries} drafts` : 'Clear'} tone="emerald" />
-                  <StatusTile icon={CalendarDays} label="Next trip" value={latestTrip?.destination ?? 'Not scheduled'} tone="ember" />
-                </div>
+            <section>
+              <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+                <h1 className="font-display text-4xl font-normal text-navy-800">
+                  {greeting}, {user?.name?.split(' ')[0] ?? 'traveler'}
+                </h1>
+                <p className="font-mono text-sm uppercase tracking-widest text-slate-400">{formatDate(new Date().toISOString())}</p>
               </div>
-              <NextActions latestTrip={latestTrip} pendingInquiries={pendingInquiries} />
+              <div className="mt-8 flex items-center justify-between gap-4">
+                <p className="eyebrow-slate">Your journeys</p>
+                <motion.div whileTap={{ scale: 0.96 }} whileHover={{ scale: 1.02 }}>
+                  <Link href="#new-trip" className="btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm">
+                    New Trip <Plus className="h-4 w-4" />
+                  </Link>
+                </motion.div>
+              </div>
+              <hr className="section-divider mt-6" />
             </section>
 
             <StatsBanner trips={trips.length} inquiries={sentInquiries} destinations={destinations} />
@@ -95,10 +91,10 @@ export default function DashboardPage() {
                 <section>
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div>
-                      <h2 className="text-2xl font-semibold text-navy-800">Your Trips</h2>
+                      <h2 className="font-display text-2xl font-semibold text-navy-800">Your Trips</h2>
                       <p className="text-sm text-slate-400">Active planning boards and saved travel workspaces.</p>
                     </div>
-                    <Link href="#new-trip" className="hidden items-center gap-2 rounded-full bg-ember-500 px-4 py-2 text-sm font-semibold text-white md:inline-flex">
+                    <Link href="#new-trip" className="btn-primary hidden items-center gap-2 px-4 py-2 text-sm md:inline-flex">
                       <Plus className="h-4 w-4" /> New Trip
                     </Link>
                   </div>
@@ -159,56 +155,6 @@ function DashboardRail({ pendingInquiries }: { pendingInquiries: number }) {
         <p className="mt-1 text-xs leading-5 text-slate-400">Review drafts, compare stays, and keep bookings moving.</p>
       </div>
     </aside>
-  );
-}
-
-function StatusTile({
-  icon: Icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: typeof Sparkles;
-  label: string;
-  value: string;
-  tone: 'ocean' | 'emerald' | 'ember';
-}) {
-  const color = tone === 'ocean' ? 'text-ocean-500 bg-ocean-100' : tone === 'emerald' ? 'text-emerald-600 bg-emerald-100' : 'text-ember-500 bg-ember-100';
-  return (
-    <div className="rounded-2xl border border-ivory-300 bg-ivory-100 p-4">
-      <Icon className={`h-5 w-5 rounded-lg p-0.5 ${color}`} />
-      <p className="mt-3 font-mono text-xs uppercase text-slate-400">{label}</p>
-      <p className="mt-1 font-semibold text-navy-800">{value}</p>
-    </div>
-  );
-}
-
-function NextActions({ latestTrip, pendingInquiries }: { latestTrip?: Trip; pendingInquiries: number }) {
-  const actions = [
-    latestTrip ? { label: `Open ${latestTrip.destination}`, href: `/trip/${latestTrip.id}`, icon: ArrowRight } : { label: 'Plan a first trip', href: '#new-trip', icon: Plus },
-    { label: pendingInquiries ? 'Review inquiry drafts' : 'View inquiry tracker', href: '/inquiries', icon: MessageCircle },
-    { label: 'Generate next itinerary', href: latestTrip ? `/trip/${latestTrip.id}` : '#new-trip', icon: Sparkles },
-  ];
-
-  return (
-    <div className="elevated-card p-5">
-      <h2 className="text-2xl font-semibold text-navy-800">Next Actions</h2>
-      <div className="mt-4 space-y-3">
-        {actions.map((action, index) => {
-          const Icon = action.icon;
-          return (
-            <motion.div key={action.label} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.06 }}>
-              <Link href={action.href} className="flex items-center justify-between rounded-2xl bg-ivory-100 p-4 text-sm font-semibold text-navy-800 hover:bg-ocean-100">
-                <span className="flex items-center gap-3">
-                  <Icon className="h-4 w-4 text-ocean-500" /> {action.label}
-                </span>
-                <ArrowRight className="h-4 w-4 text-slate-400" />
-              </Link>
-            </motion.div>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 

@@ -6,5 +6,6 @@ export function useTrip(tripId: string) {
     queryKey: ['trip', tripId],
     queryFn: () => getTrip(tripId),
     enabled: !!tripId,
+    refetchOnWindowFocus: false,
   });
 }

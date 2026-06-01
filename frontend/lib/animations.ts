@@ -74,3 +74,18 @@ export const drawerSlideUp = {
   animate: { y: 0, transition: { type: 'spring', stiffness: 280, damping: 30 } },
   exit: { y: '100%', transition: { duration: 0.25 } },
 };
+
+export const onboardingStep = {
+  initial: { opacity: 0, x: 40 },
+  animate: { opacity: 1, x: 0, transition: { duration: 0.4, ease: [0.25, 0.1, 0.25, 1] } },
+  exit: { opacity: 0, x: -40, transition: { duration: 0.25 } },
+};
+
+export const fadeUp = {
+  initial: { opacity: 0, y: 12 },
+  animate: (i: number = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: i * 0.1, duration: 0.4 },
+  }),
+};

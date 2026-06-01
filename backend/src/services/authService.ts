@@ -6,7 +6,7 @@ import type { User as AuthUser } from '@supabase/supabase-js';
 import { supabase } from '../plugins/supabase.js';
 import type { User } from '../schemas/user.js';
 
-const USER_COLUMNS = 'id, email, name, avatar_url' as const;
+const USER_COLUMNS = 'id, email, name, avatar_url, travel_style, interests, budget_tier, onboarding_completed' as const;
 
 function rowFromAuthUser(authUser: AuthUser) {
   const meta = authUser.user_metadata ?? {};
@@ -24,12 +24,20 @@ function toUser(row: {
   email: string;
   name: string | null;
   avatar_url: string | null;
+  travel_style?: string | null;
+  interests?: string[] | null;
+  budget_tier?: 'budget' | 'comfort' | 'luxury' | null;
+  onboarding_completed: boolean;
 }): User {
   return {
     id: row.id,
     email: row.email,
     name: row.name,
     avatar_url: row.avatar_url,
+    travel_style: row.travel_style ?? null,
+    interests: row.interests ?? null,
+    budget_tier: row.budget_tier ?? null,
+    onboarding_completed: row.onboarding_completed,
   };
 }
 

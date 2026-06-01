@@ -99,7 +99,7 @@ export function InquiryModal({
               <div className="h-16 w-16 rounded-2xl bg-ivory-200" />
             )}
             <div>
-              <p className="font-mono text-xs uppercase tracking-[0.18em] text-ocean-500">Smart Inquiry</p>
+              <p className="eyebrow">Smart Inquiry</p>
               <h3 className="mt-1 text-2xl font-semibold text-navy-800">{propertyName}</h3>
               {platform && <span className="mt-2 inline-flex rounded-full bg-ivory-200 px-2.5 py-1 text-xs font-semibold capitalize text-navy-700">{platform}</span>}
             </div>
@@ -118,7 +118,7 @@ export function InquiryModal({
 
           <div className="mt-6">
             <div className="mb-2 flex items-center justify-between">
-              <label className="text-sm font-medium text-slate-400">AI-drafted message</label>
+              <label className="eyebrow-slate">AI-drafted message</label>
               <button 
                 type="button" 
                 onClick={() => setEditable(!editable)} 
@@ -132,7 +132,7 @@ export function InquiryModal({
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               readOnly={!editable}
-              className="min-h-[180px] w-full resize-none rounded-2xl border border-ivory-300 bg-ivory-100 p-4 text-sm leading-6 text-navy-900 outline-none focus:border-ocean-500 disabled:opacity-50"
+              className="input-box min-h-[180px] resize-none text-sm leading-6 disabled:opacity-50"
             />
             <p className="mt-1 text-right font-mono text-xs text-slate-400">{message.length} characters</p>
           </div>

@@ -5,12 +5,26 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { createTrip, searchProperties } from '@/lib/api';
 import { useRetreatStore } from '@/lib/store';
+import { useAuth } from '@/components/auth-provider';
 
 function NewTripContent() {
   const params = useSearchParams();
   const router = useRouter();
+  const { user, session, loading } = useAuth();
   const setProperties = useRetreatStore((s) => s.setProperties);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loading && !session) {
+      router.replace('/');
+      return;
+    }
+
+    if (!loading && session && user && !user.onboarding_completed) {
+      router.replace('/onboarding');
+      return;
+    }
+  }, [loading, session, user, router]);
 
   useEffect(() => {
     const destination = params.get('destination');
@@ -52,7 +66,7 @@ function NewTripContent() {
   }, [params, router, setProperties]);
 
   return (
-    <div className="gradient-mesh flex min-h-screen flex-col items-center justify-center gap-4">
+    <div className="page-bg flex min-h-screen flex-col items-center justify-center gap-4">
       <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.2, ease: 'linear' }} className="h-10 w-10 rounded-full border-2 border-ivory-300 border-t-ember-500" />
       <p className="font-mono text-sm text-slate-400">{error ?? 'Creating your trip...'}</p>
     </div>

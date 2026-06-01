@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { requireSupabase } from '@/lib/supabase';
-import api, { verifyAuth } from '@/lib/api';
+import api, { verifyAuth, completeOnboarding as completeOnboardingApi } from '@/lib/api';
 import type { User } from '@/types';
 
 interface AuthContextValue {
@@ -14,6 +14,7 @@ interface AuthContextValue {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  completeOnboarding: (profile?: { name?: string; travel_style?: string; interests?: string[]; budget_tier?: string }) => Promise<User>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -124,8 +125,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   };
 
+  const completeOnboarding = async (body: { name?: string; travel_style?: string; interests?: string[]; budget_tier?: string } = {}) => {
+    const profile = await completeOnboardingApi(body);
+    setUser(profile);
+    return profile;
+  };
+
   return (
-    <AuthContext.Provider value={{ session, user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, signOut }}>
+    <AuthContext.Provider
+      value={{
+        session,
+        user,
+        loading,
+        signInWithGoogle,
+        signInWithEmail,
+        signUpWithEmail,
+        signOut,
+        completeOnboarding,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

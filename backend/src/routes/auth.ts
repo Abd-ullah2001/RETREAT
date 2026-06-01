@@ -1,9 +1,6 @@
-/**
- * Auth routes — token verification after OAuth and current user profile.
- */
 import type { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/authenticate.js';
-import { VerifyBodySchema, SignUpBodySchema } from '../schemas/user.js';
+import { OnboardingBodySchema, VerifyBodySchema, SignUpBodySchema } from '../schemas/user.js';
 import { supabase } from '../plugins/supabase.js';
 import { getUserById, upsertUserFromAuth, verifyAccessToken } from '../services/authService.js';
 
@@ -46,7 +43,15 @@ const authRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    return reply.status(201).send({ user: data.user });
+    // Create user profile in users table
+    try {
+      const user = await upsertUserFromAuth(data.user);
+      return reply.status(201).send({ user: user || data.user });
+    } catch (dbError) {
+      console.error('Failed to create user profile:', dbError);
+      // Still return the auth user even if profile creation fails
+      return reply.status(201).send({ user: data.user });
+    }
   });
 
   /**
@@ -82,6 +87,38 @@ const authRoutes: FastifyPluginAsync = async (app) => {
     }
 
     return reply.send({ user });
+  });
+
+  app.patch('/auth/onboarding', { preHandler: authenticate }, async (request, reply) => {
+    const parsed = OnboardingBodySchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: 'Invalid request body',
+        requestId: request.requestId,
+      });
+    }
+
+    const userId = request.user!.id;
+    const update = {
+      ...parsed.data,
+      onboarding_completed: parsed.data.onboarding_completed ?? true,
+    };
+    const { data, error } = await supabase
+      .from('users')
+      .update(update)
+      .eq('id', userId)
+      .select('id, email, name, avatar_url, travel_style, interests, budget_tier, onboarding_completed')
+      .single();
+
+    if (error || !data) {
+      return reply.status(500).send({
+        error: 'Failed to update onboarding status',
+        requestId: request.requestId,
+      });
+    }
+
+    return reply.send({ user: data });
   });
 
   /**

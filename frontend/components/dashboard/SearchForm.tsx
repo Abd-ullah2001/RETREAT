@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ArrowRight, AlertCircle, Loader2, Minus, Plus, Search } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { searchPlaces, type PlaceSuggestion } from '@/lib/api';
+import { createTrip, searchPlaces, type PlaceSuggestion } from '@/lib/api';
 import { useRetreatStore } from '@/lib/store';
 import { buttonTap, scaleIn } from '@/lib/animations';
 import { showToast } from '@/components/shared/ToastProvider';
@@ -76,7 +76,7 @@ export function SearchForm() {
     setSuggestions([]);
   };
 
-  const onSubmit = (data: SearchFormData) => {
+  const onSubmit = async (data: SearchFormData) => {
     if (!lat || !lng) {
       showToast('error', 'Please select a destination from the dropdown');
       return;
@@ -84,15 +84,15 @@ export function SearchForm() {
 
     const params = { destination: data.destination, lat, lng, checkin: data.checkin, checkout: data.checkout, guests: data.guests };
     setSearchParams(params);
-    const q = new URLSearchParams({
+    const trip = await createTrip({
       destination: data.destination,
-      lat: String(lat),
-      lng: String(lng),
+      destination_lat: lat,
+      destination_lng: lng,
       checkin: data.checkin,
       checkout: data.checkout,
-      guests: String(data.guests),
+      guests: data.guests,
     });
-    router.push(`/trip/new?${q.toString()}`);
+    router.push(`/trip/${trip.id}`);
   };
 
   const today = new Date().toISOString().slice(0, 10);
@@ -107,7 +107,8 @@ export function SearchForm() {
       animate="animate"
       className="elevated-card elevated-card-hover p-6 md:p-8"
     >
-      <h2 className="text-2xl font-semibold text-navy-800">Plan a new trip</h2>
+      <p className="eyebrow">Plan a trip</p>
+      <h2 className="mt-2 font-display text-3xl font-semibold text-navy-900">Where are you going?</h2>
 
       {hasErrors && (
         <motion.div
@@ -129,8 +130,8 @@ export function SearchForm() {
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.4fr_1fr_0.7fr_auto]">
         {/* Destination */}
         <div className="relative">
-          <label className="text-sm font-medium text-navy-700">Destination</label>
-          <div className="mt-1 flex items-center gap-2 rounded-2xl border border-ivory-300 bg-ivory-100 px-4 py-3 focus-within:border-ocean-500">
+          <label className="eyebrow-slate">Destination</label>
+          <div className="input-box mt-2 flex items-center gap-2 px-4 py-3">
             <Search className="h-4 w-4 text-slate-400" />
             <input
               {...register('destination')}
@@ -167,28 +168,28 @@ export function SearchForm() {
         {/* Dates */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-sm font-medium text-navy-700">Check-in</label>
+            <label className="eyebrow-slate">Check-in</label>
             <input
               type="date"
               min={today}
               {...register('checkin')}
-              className="mt-1 w-full rounded-2xl border border-ivory-300 bg-ivory-100 px-4 py-3 text-navy-900 outline-none focus:border-ocean-500"
+            className="input-box mt-2"
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-navy-700">Check-out</label>
+            <label className="eyebrow-slate">Check-out</label>
             <input
               type="date"
               min={checkin || today}
               {...register('checkout')}
-              className="mt-1 w-full rounded-2xl border border-ivory-300 bg-ivory-100 px-4 py-3 text-navy-900 outline-none focus:border-ocean-500"
+            className="input-box mt-2"
             />
           </div>
         </div>
 
         {/* Guests */}
         <div>
-          <label className="text-sm font-medium text-navy-700">Guests</label>
+          <label className="eyebrow-slate">Guests</label>
           <div className="mt-1 flex h-[50px] items-center justify-between rounded-2xl border border-ivory-300 bg-ivory-100 px-2">
             <motion.button
               type="button"
@@ -216,9 +217,9 @@ export function SearchForm() {
             type="submit"
             {...buttonTap}
             disabled={isSubmitting}
-            className="inline-flex h-[50px] w-full items-center justify-center gap-2 rounded-full bg-ember-500 px-6 font-semibold text-white disabled:opacity-70 lg:w-auto"
+            className="btn-primary inline-flex h-[50px] w-full items-center justify-center gap-2 px-6 disabled:opacity-70 lg:w-auto"
           >
-            Search
+            Search & Plan
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
           </motion.button>
         </div>

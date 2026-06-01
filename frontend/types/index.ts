@@ -3,11 +3,21 @@ export interface User {
   email: string;
   name: string | null;
   avatar_url: string | null;
+  travel_style?: TravelStyle | null;
+  interests?: string[] | null;
+  budget_tier?: BudgetTier | null;
+  onboarding_completed: boolean;
 }
+
+export type Platform = 'booking' | 'airbnb';
+export type TripStatus = 'planning' | 'active' | 'completed';
+export type InquiryStatus = 'draft' | 'sent';
+export type BudgetTier = 'budget' | 'comfort' | 'luxury';
+export type TravelStyle = 'luxury' | 'adventure' | 'cultural' | 'relaxation';
 
 export interface Property {
   id: string;
-  platform: 'booking' | 'airbnb';
+  platform: Platform;
   name: string;
   description: string | null;
   imageUrls: string[];
@@ -52,7 +62,7 @@ export interface Trip {
   checkin: string;
   checkout: string;
   guests: number;
-  status: 'planning' | 'active' | 'completed';
+  status: TripStatus;
   itinerary: Itinerary | null;
   created_at: string;
 }
@@ -84,8 +94,18 @@ export interface Inquiry {
   ai_message: string;
   final_message: string;
   channel: string;
-  status: 'draft' | 'sent';
+  status: InquiryStatus;
   wa_link: string | null;
   sent_at: string | null;
   created_at: string;
+}
+
+export interface SearchParams {
+  destination: string;
+  lat: number;
+  lng: number;
+  checkin: string;
+  checkout: string;
+  guests: number;
+  currency?: string;
 }

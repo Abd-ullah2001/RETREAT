@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowRight, BedDouble, Building2, CalendarDays, Check, ChevronDown, CloudSun, Mail, MapPin, MessageCircle, Search, ShieldCheck, Sparkles, Star } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
 import { buttonTap, cardVariants, floatOrb, slideFromLeft } from '@/lib/animations';
-import { FloatingOrbs } from './FloatingOrbs';
 
 export function Hero() {
   const { signInWithGoogle, signInWithEmail, signUpWithEmail, session, loading } = useAuth();
@@ -33,12 +33,14 @@ export function Hero() {
     try {
       if (authMode === 'signup') {
         await signUpWithEmail(email, password);
-        setAuthSuccess('Account created successfully. Please log in to continue.');
-        setAuthMode('signin');
+        // Auto-signin after signup
+        await signInWithEmail(email, password);
+        setAuthSuccess('Account created successfully!');
         setSignupAttempts(0);
+        // Router will push to dashboard via the session effect
       } else {
         await signInWithEmail(email, password);
-        router.push('/dashboard');
+        // Router will push to dashboard via the session effect
       }
     } catch (error) {
       if (authMode === 'signup') {
@@ -52,7 +54,8 @@ export function Hero() {
 
   return (
     <section className="relative isolate min-h-screen overflow-hidden bg-navy-900 text-white">
-      <FloatingOrbs />
+      <Image src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2200&q=80" alt="" fill priority sizes="100vw" className="object-cover" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(13,27,42,0.3)_0%,rgba(13,27,42,0.55)_100%)]" />
       <div className="relative z-10 mx-auto grid min-h-screen max-w-7xl grid-cols-1 items-center gap-12 px-6 py-24 lg:grid-cols-[1.1fr_0.9fr]">
         <div>
           <motion.p
@@ -60,19 +63,19 @@ export function Hero() {
             variants={slideFromLeft}
             initial="initial"
             animate="animate"
-            className="font-mono text-xs uppercase tracking-[0.24em] text-ocean-300"
+            className="eyebrow text-white"
           >
-            AI Travel Operations Platform
+            Private directions
           </motion.p>
           <motion.h1
             custom={1}
             variants={slideFromLeft}
             initial="initial"
             animate="animate"
-            className="mt-6 max-w-3xl text-6xl font-semibold leading-[0.95] md:text-7xl"
+            className="mt-6 max-w-3xl font-display text-6xl font-normal leading-[0.95] text-white md:text-7xl"
           >
             Your travel,
-            <span className="block italic text-gradient-ocean">orchestrated.</span>
+            <span className="block italic">orchestrated.</span>
           </motion.h1>
           <motion.p
             custom={2}
@@ -96,9 +99,9 @@ export function Hero() {
               type="button"
               {...buttonTap}
               onClick={() => signInWithGoogle()}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-ember-500 px-7 py-4 font-semibold text-white shadow-lg shadow-ember-500/25"
+              className="btn-primary inline-flex items-center justify-center gap-2 uppercase"
             >
-              Start Planning <ArrowRight className="h-4 w-4" />
+              Start your journey <ArrowRight className="h-4 w-4" />
             </motion.button>
             <motion.a
               href="#features"

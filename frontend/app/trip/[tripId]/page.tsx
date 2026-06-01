@@ -1,6 +1,6 @@
 'use client';
 
-import { use } from 'react';
+import { use, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ActivityGrid } from '@/components/trip/ActivityGrid';
@@ -10,15 +10,30 @@ import { PageTransition } from '@/components/shared/PageTransition';
 import { PropertyStack } from '@/components/trip/PropertyStack';
 import { generateItinerary, getTrip, searchActivities, searchProperties } from '@/lib/api';
 import { useRetreatStore } from '@/lib/store';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/components/auth-provider';
 
 const MapView = dynamic(() => import('@/components/trip/MapView'), { ssr: false });
 
 export default function TripDetailPage({ params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = use(params);
+  const router = useRouter();
+  const { user, session, loading } = useAuth();
   const queryClient = useQueryClient();
   const properties = useRetreatStore((s) => s.properties);
   const setProperties = useRetreatStore((s) => s.setProperties);
   const setCurrentTrip = useRetreatStore((s) => s.setCurrentTrip);
+
+  useEffect(() => {
+    if (!loading && !session) {
+      router.replace('/');
+      return;
+    }
+
+    if (!loading && session && user && !user.onboarding_completed) {
+      router.replace('/onboarding');
+    }
+  }, [loading, session, user, router]);
 
   const { data: trip, isLoading } = useQuery({
     queryKey: ['trip', tripId],
@@ -57,7 +72,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ tripId: s
 
   if (isLoading || !trip) {
     return (
-      <div className="gradient-mesh flex min-h-screen items-center justify-center">
+      <div className="page-bg flex min-h-screen items-center justify-center">
         <p className="font-mono text-sm text-slate-400">Loading trip...</p>
       </div>
     );
@@ -68,7 +83,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ tripId: s
 
   return (
     <PageTransition>
-      <div className="gradient-mesh min-h-screen">
+      <div className="page-bg min-h-screen">
         <Navbar />
         <main className="mx-auto max-w-[1480px] px-4 py-5">
           <div className="mb-5 flex flex-col justify-between gap-2 md:flex-row md:items-end">

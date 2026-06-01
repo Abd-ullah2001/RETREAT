@@ -29,7 +29,7 @@ export function ItineraryPanel({ itinerary, loading, onGenerate }: ItineraryPane
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold text-navy-800">Your Itinerary</h2>
-        <motion.button type="button" {...buttonTap} onClick={onGenerate} disabled={loading} className="inline-flex items-center gap-2 rounded-full bg-ocean-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+        <motion.button type="button" {...buttonTap} onClick={onGenerate} disabled={loading} className="btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-60">
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}
           {loading ? 'Generating' : 'Generate Plan'}
         </motion.button>
@@ -37,7 +37,7 @@ export function ItineraryPanel({ itinerary, loading, onGenerate }: ItineraryPane
       {loading && (
         <div className="elevated-card space-y-4 p-5">
           <div className="flex items-center gap-2 text-navy-800">
-            <span className="font-semibold">AI is planning your trip</span>
+            <span className="eyebrow">AI is working</span>
             <span className="flex gap-1">
               {[0, 1, 2].map((dot) => (
                 <motion.span key={dot} animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, delay: dot * 0.15, duration: 0.8 }} className="h-1.5 w-1.5 rounded-full bg-ocean-500" />

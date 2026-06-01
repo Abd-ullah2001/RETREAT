@@ -19,3 +19,6 @@ export function Providers({ children }: { children: ReactNode }) {
     </ErrorBoundary>
   );
 }
+
+// Use suppressHydrationWarning as a temporary measure
+// This is safe because these are client components in a proper boundary

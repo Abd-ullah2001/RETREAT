@@ -32,7 +32,7 @@ export function PropertyCard({ property, index, onSwipe }: PropertyCardProps) {
       dragConstraints={{ left: 0, right: 0 }}
       onDragEnd={handleDragEnd}
       whileHover={{ y: -4 }}
-      className="elevated-card relative mx-auto h-[560px] w-full max-w-sm cursor-grab overflow-hidden active:cursor-grabbing"
+      className="photo-card relative mx-auto h-[560px] w-full max-w-sm cursor-grab active:cursor-grabbing"
     >
       <motion.div className="absolute inset-0 z-10 bg-emerald-100 pointer-events-none" style={{ opacity: greenOpacity }} />
       <motion.div className="absolute inset-0 z-10 bg-ember-100 pointer-events-none" style={{ opacity: redOpacity }} />
@@ -49,7 +49,7 @@ export function PropertyCard({ property, index, onSwipe }: PropertyCardProps) {
         ) : (
           <div className="h-full w-full bg-ivory-200" />
         )}
-        <span className="absolute left-4 top-4 rounded-full bg-ivory-50/85 px-3 py-1 text-xs font-semibold capitalize text-navy-800">
+        <span className="eyebrow absolute left-4 top-4 rounded bg-navy-900/50 px-2 py-1 text-white">
           {property.platform === 'booking' ? 'Booking.com' : 'Airbnb'}
         </span>
         <span className="absolute right-4 top-4 rounded-full bg-navy-900/75 px-3 py-1 font-mono text-xs text-white">
@@ -80,7 +80,7 @@ export function PropertyCard({ property, index, onSwipe }: PropertyCardProps) {
             </span>
           ))}
         </div>
-        <a href={property.bookingUrl} target="_blank" rel="noopener noreferrer" className="mt-auto inline-flex items-center gap-1 text-sm font-semibold text-ocean-500">
+        <a href={property.bookingUrl} target="_blank" rel="noopener noreferrer" className="mt-auto inline-flex items-center gap-1 text-sm font-semibold text-ember-500">
           View listing <ExternalLink className="h-3.5 w-3.5" />
         </a>
       </div>
