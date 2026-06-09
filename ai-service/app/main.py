@@ -1,12 +1,23 @@
 """Retreat AI Service — FastAPI entry point."""
-import os
 
-import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from app.config import get_settings
 from app.routers import message, plan
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
+import os
+
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    environment=os.getenv("ENVIRONMENT", "development"),
+    traces_sample_rate=1.0,
+    integrations=[
+        StarletteIntegration(),
+        FastApiIntegration(),
+    ],
+)
 
 settings = get_settings()
 
@@ -39,4 +50,9 @@ def health():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, reload=settings.ENVIRONMENT == "development")
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=settings.PORT,
+        reload=settings.ENVIRONMENT == "development",
+    )
