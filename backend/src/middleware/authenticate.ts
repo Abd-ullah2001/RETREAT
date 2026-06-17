@@ -6,13 +6,20 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { verifyAccessToken } from '../services/authService.js';
 
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
-  const header = request.headers.authorization;
+  const authHeader = request.headers.authorization;
+  const queryToken = (request.query as Record<string, string>)?.token;
 
-  if (!header?.startsWith('Bearer ')) {
+  let token = '';
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.slice(7);
+  } else if (queryToken) {
+    token = queryToken;
+  }
+
+  if (!token) {
     return reply.status(401).send({ error: 'Unauthorized', requestId: request.requestId });
   }
 
-  const token = header.slice(7);
   const authUser = await verifyAccessToken(token);
 
   if (!authUser) {

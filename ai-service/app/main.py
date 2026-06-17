@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
-from app.routers import message, plan
+from app.routers import message, plan, replan
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
@@ -40,6 +40,7 @@ app.add_middleware(
 
 app.include_router(plan.router)
 app.include_router(message.router)
+app.include_router(replan.router)
 
 
 @app.get("/health")

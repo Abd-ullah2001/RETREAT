@@ -8,10 +8,11 @@ export function setSentryContext(req: FastifyRequest) {
     method: req.method,
   });
 
-  if ((req as any).user) {
+  const user = (req as any).user;
+  if (user?.id) {
     Sentry.setUser({
-      id: (req as any).user.id,
-      email: (req as any).user.email,
+      id: user.id,
     });
   }
-}
+
+};

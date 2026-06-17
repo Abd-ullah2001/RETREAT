@@ -53,6 +53,85 @@ export interface Activity {
   photoUrls: string[];
 }
 
+export interface Restaurant {
+  id: string;
+  placeId: string;
+  name: string;
+  cuisine: string | null;
+  rating: number | null;
+  reviewCount: number | null;
+  priceLevel: number | null;
+  priceLevelLabel: 'Budget' | 'Moderate' | 'Expensive' | 'Very Expensive' | null;
+  address: string;
+  lat: number;
+  lng: number;
+  openingHours: string[] | null;
+  phoneNumber: string | null;
+  website: string | null;
+  photoUrls: string[];
+  servesBreakfast: boolean | null;
+  servesLunch: boolean | null;
+  servesDinner: boolean | null;
+  googleMapsUrl: string | null;
+}
+
+export interface DayWeather {
+  date: string;
+  tempMin: number;
+  tempMax: number;
+  description: string;
+  icon: string;
+  rainProbability: number;
+  humidity: number;
+  windSpeed: number;
+  isGoodForOutdoor: boolean;
+}
+
+export interface WeatherForecast {
+  location: string;
+  days: DayWeather[];
+}
+
+export interface MealSlot {
+  restaurant_id: string | null;
+  restaurant_name: string;
+  note: string;
+}
+
+export interface ItineraryTimeSlot {
+  activity_id: string;
+  activity_name: string;
+  start_time: string;           // "09:00"
+  end_time: string;             // "11:30"
+  note: string;
+  travel_time_to_next_minutes: number;
+}
+
+export interface ItineraryDay {
+  day: number;
+  date: string;
+  theme: string;
+  weather_note: string;
+  estimated_day_cost_usd: number;
+  morning: ItineraryTimeSlot;
+  afternoon: ItineraryTimeSlot;
+  evening: ItineraryTimeSlot;
+  meals: {
+    breakfast: MealSlot;
+    lunch: MealSlot;
+    dinner: MealSlot;
+  };
+}
+
+export interface Itinerary {
+  summary: string;
+  recommended_property_ids: string[];
+  estimated_total_cost_usd: number;
+  days: ItineraryDay[];
+  tips: string[];
+  packing_suggestions: string[];
+}
+
 export interface Trip {
   id: string;
   user_id: string;
@@ -65,23 +144,6 @@ export interface Trip {
   status: TripStatus;
   itinerary: Itinerary | null;
   created_at: string;
-}
-
-export interface Itinerary {
-  summary: string;
-  recommended_property_ids: string[];
-  days: ItineraryDay[];
-  tips: string[];
-}
-
-export interface ItineraryDay {
-  day: number;
-  date: string;
-  theme: string;
-  morning: { activity_id: string; note: string };
-  afternoon: { activity_id: string; note: string };
-  evening: { activity_id: string; note: string };
-  meal_suggestion: string;
 }
 
 export interface Inquiry {

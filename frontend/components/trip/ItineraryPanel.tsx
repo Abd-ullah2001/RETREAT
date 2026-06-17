@@ -2,21 +2,23 @@
 
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Lightbulb, Loader2 } from 'lucide-react';
+import { Lightbulb, Loader2, Backpack } from 'lucide-react';
 import { ItineraryDayRow } from './ItineraryDay';
 import { SkeletonCard } from '@/components/shared/SkeletonCard';
 import { buttonTap } from '@/lib/animations';
-import type { Itinerary } from '@/types';
+import type { Itinerary, DayWeather, Restaurant } from '@/types';
 
 interface ItineraryPanelProps {
   itinerary: Itinerary | null;
   loading: boolean;
   onGenerate: () => void;
+  weatherDays?: DayWeather[] | null;
+  restaurants?: Restaurant[];
 }
 
 const messages = ['Analyzing activities...', 'Ranking properties...', 'Building your days...'];
 
-export function ItineraryPanel({ itinerary, loading, onGenerate }: ItineraryPanelProps) {
+export function ItineraryPanel({ itinerary, loading, onGenerate, weatherDays, restaurants }: ItineraryPanelProps) {
   const [messageIndex, setMessageIndex] = useState(0);
 
   useEffect(() => {
@@ -58,9 +60,10 @@ export function ItineraryPanel({ itinerary, loading, onGenerate }: ItineraryPane
         <>
           <p className="text-sm leading-6 text-navy-700">{itinerary.summary}</p>
           <div className="space-y-3">
-            {itinerary.days.map((day, i) => (
-              <ItineraryDayRow key={day.day} day={day} index={i} />
-            ))}
+            {itinerary.days.map((day, i) => {
+              const dayWeather = weatherDays?.find((w) => w.date === day.date) ?? null;
+              return <ItineraryDayRow key={day.day} day={day} index={i} weather={dayWeather} restaurants={restaurants} />;
+            })}
           </div>
           <div className="space-y-2">
             <h3 className="text-lg font-semibold text-navy-800">Travel Tips</h3>
@@ -71,6 +74,21 @@ export function ItineraryPanel({ itinerary, loading, onGenerate }: ItineraryPane
               </div>
             ))}
           </div>
+          {itinerary.packing_suggestions && itinerary.packing_suggestions.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-navy-800 flex items-center gap-2">
+                <Backpack className="h-5 w-5 text-ocean-500" />
+                Packing Suggestions
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {itinerary.packing_suggestions.map((item) => (
+                  <span key={item} className="rounded-full bg-ocean-100 px-3 py-1 text-xs font-medium text-ocean-700">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
       {!itinerary && !loading && (

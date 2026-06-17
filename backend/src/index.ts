@@ -18,6 +18,8 @@ import activityRoutes from './routes/activities.js';
 import tripRoutes from './routes/trips.js';
 import inquiryRoutes from './routes/inquiries.js';
 import messageRoutes from './routes/messages.js';
+import restaurantRoutes from './routes/restaurants.js';
+import weatherRoutes from './routes/weather.js';
 import workerRoutes from './workers/inquiryWorker.js';
 
 const app = Fastify({
@@ -60,6 +62,8 @@ async function buildServer() {
   await app.register(tripRoutes, { prefix: '/api/v1' });
   await app.register(inquiryRoutes, { prefix: '/api/v1' });
   await app.register(messageRoutes, { prefix: '/api/v1' });
+  await app.register(restaurantRoutes, { prefix: '/api/v1' });
+  await app.register(weatherRoutes, { prefix: '/api/v1' });
 
   await app.register(workerRoutes);
 
@@ -76,14 +80,16 @@ async function buildServer() {
       url: request.url,
     });
 
-    // ALWAYS send to Sentry
-    Sentry.withScope((scope) => {
-      scope.setTag('statusCode', String(statusCode));
-      scope.setTag('route', request.url);
-      scope.setTag('method', request.method);
+    // Only report server errors (5xx) to Sentry
+    if (statusCode >= 500) {
+      Sentry.withScope((scope) => {
+        scope.setTag('statusCode', String(statusCode));
+        scope.setTag('route', request.url);
+        scope.setTag('method', request.method);
 
-      Sentry.captureException(error);
-    });
+        Sentry.captureException(error);
+      });
+    }
 
     reply.status(statusCode).send({
       error: statusCode >= 500 ? 'Internal Server Error' : error.message,

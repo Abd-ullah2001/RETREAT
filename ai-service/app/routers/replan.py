@@ -5,8 +5,8 @@ from app.services.planner import generate_itinerary
 
 router = APIRouter()
 
-@router.post("/plan", response_model=ItineraryResponse)
-def create_plan(body: PlanRequest) -> dict:
+@router.post("/replan", response_model=ItineraryResponse)
+def replan(body: PlanRequest) -> dict:
     return generate_itinerary(
         destination=body.destination,
         checkin=body.checkin,

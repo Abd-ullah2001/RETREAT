@@ -49,6 +49,9 @@ export const config = {
   // Google Places
   GOOGLE_PLACES_API_KEY: requireEnv('GOOGLE_PLACES_API_KEY'),
 
+  // OpenWeatherMap
+  OPENWEATHERMAP_API_KEY: requireEnv('OPENWEATHERMAP_API_KEY'),
+
   // Internal AI service
   AI_SERVICE_URL: requireEnv('AI_SERVICE_URL'),
 

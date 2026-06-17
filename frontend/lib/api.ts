@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance } from 'axios';
 import { requireSupabase } from './supabase';
-import type { Activity, Inquiry, Property, Trip, User } from '@/types';
+import type { Activity, Inquiry, Property, Trip, User, Restaurant, WeatherForecast } from '@/types';
 
 const api: AxiosInstance = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
@@ -171,6 +171,29 @@ export async function updateInquiryMessage(id: string, final_message: string) {
 export async function markInquirySent(id: string) {
   const { data } = await api.patch<{ inquiry: Inquiry }>(`/api/v1/inquiries/${id}/sent`);
   return data.inquiry;
+}
+
+export async function searchRestaurants(params: { lat: number; lng: number; radius?: number; cuisine?: string }) {
+  const { data } = await api.get<{ restaurants: Restaurant[]; cached: boolean; count: number }>(
+    '/api/v1/restaurants/search',
+    { params },
+  );
+  return data;
+}
+
+export async function getWeatherForecast(params: { lat: number; lng: number; days: number }) {
+  const { data } = await api.get<{ forecast: WeatherForecast | null; cached: boolean }>(
+    '/api/v1/weather/forecast',
+    { params },
+  );
+  return data;
+}
+
+export async function replanItinerary(tripId: string, feedback?: string) {
+  const { data } = await api.post<{ trip: Trip; regenerated: boolean }>(`/api/v1/trips/${tripId}/replan`, {
+    feedback,
+  });
+  return data;
 }
 
 export default api;
