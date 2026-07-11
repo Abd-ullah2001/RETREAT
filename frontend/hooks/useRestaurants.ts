@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { searchRestaurants } from '../lib/api';
+import { searchRestaurants } from '@/lib/api';
 
 export function useRestaurants(params: { lat: number; lng: number; radius?: number; cuisine?: string }) {
   return useQuery({

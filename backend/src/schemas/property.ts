@@ -31,12 +31,3 @@ export const PropertySearchQuerySchema = z.object({
   currency: z.string().default('USD'),
 });
 
-export const PropertySearchResponseSchema = z.object({
-  properties: z.array(PropertySchema),
-  sources: z.object({
-    booking: z.number(),
-    airbnb: z.number(),
-  }),
-  cached: z.boolean(),
-  count: z.number(),
-});

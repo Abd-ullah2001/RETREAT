@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getWeatherForecast } from '../lib/api';
+import { getWeatherForecast } from '@/lib/api';
 
 export function useWeather(params: { lat: number; lng: number; days: number }) {
   return useQuery({

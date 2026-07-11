@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { authenticate } from '../middleware/authenticate.js';
 import { getForecast } from '../services/weatherService.js';
+import { cacheGet } from '../services/cacheService.js';
 
 const WeatherQuerySchema = z.object({
   lat: z.coerce.number(),
@@ -22,11 +23,14 @@ const weatherRoutes: FastifyPluginAsync = async (app) => {
 
     const { lat, lng, days } = parsed.data;
 
+    const cacheKey = `weather:${lat.toFixed(1)}:${lng.toFixed(1)}`;
+    const wasCached = Boolean(await cacheGet(cacheKey));
+
     const forecast = await getForecast({ lat, lng, days });
 
     return reply.send({
       forecast,
-      cached: forecast !== null,
+      cached: wasCached,
     });
   });
 };

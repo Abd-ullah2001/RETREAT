@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -36,8 +36,7 @@ function AuthCallbackContent() {
 
         try {
           const user = await verifyAuth(data.session.access_token);
-          const nextRoute = user.onboarding_completed ? '/dashboard' : '/onboarding';
-          router.replace(nextRoute);
+          router.replace(user.onboarding_completed ? '/dashboard' : '/onboarding');
         } catch (verifyError) {
           console.error('Verification failed:', verifyError);
           setError('Failed to verify credentials. Please try again.');
@@ -86,3 +85,4 @@ export default function AuthCallbackPage() {
     </Suspense>
   );
 }
+

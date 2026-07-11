@@ -19,4 +19,10 @@ __pycache__
 .next
 .github
 gcp-key.json
+ hero-animation.webm
+ hero-animation.mp4
+ hero-animation-mobile.mp4
 
+implementation.md
+frontend-implementation.md
+implementation-additions.md

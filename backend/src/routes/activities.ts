@@ -22,7 +22,20 @@ const activityRoutes: FastifyPluginAsync = async (app) => {
     const { lat, lng, radius } = parsed.data;
     const userId = request.user!.id;
     const cacheKey = `activities:${lat.toFixed(2)}:${lng.toFixed(2)}:${radius}`;
-    const wasCached = Boolean(await cacheGet(cacheKey));
+    
+    // Check cache first to short-circuit API call if data exists
+    const cachedActivities = await cacheGet<unknown[]>(cacheKey);
+    if (cachedActivities) {
+      logger.info(
+        { requestId: request.requestId, userId, service: 'activitiesRoute' },
+        'activities_search_cached',
+      );
+      return reply.send({
+        activities: cachedActivities,
+        cached: true,
+        count: cachedActivities.length,
+      });
+    }
 
     logger.info(
       { requestId: request.requestId, userId, service: 'activitiesRoute' },
@@ -37,14 +50,14 @@ const activityRoutes: FastifyPluginAsync = async (app) => {
         userId,
         service: 'activitiesRoute',
         count: activities.length,
-        cached: wasCached,
+        cached: false,
       },
       'activities_search_completed',
     );
 
     return reply.send({
       activities,
-      cached: wasCached,
+      cached: false,
       count: activities.length,
     });
   });

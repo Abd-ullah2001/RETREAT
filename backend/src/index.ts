@@ -20,8 +20,6 @@ import inquiryRoutes from './routes/inquiries.js';
 import messageRoutes from './routes/messages.js';
 import restaurantRoutes from './routes/restaurants.js';
 import weatherRoutes from './routes/weather.js';
-import workerRoutes from './workers/inquiryWorker.js';
-
 const app = Fastify({
   logger: false,
   requestIdHeader: 'x-request-id',
@@ -64,8 +62,6 @@ async function buildServer() {
   await app.register(messageRoutes, { prefix: '/api/v1' });
   await app.register(restaurantRoutes, { prefix: '/api/v1' });
   await app.register(weatherRoutes, { prefix: '/api/v1' });
-
-  await app.register(workerRoutes);
 
   /* ---------------------------
      ERROR HANDLER (CENTRAL)

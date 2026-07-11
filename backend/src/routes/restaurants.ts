@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { authenticate } from '../middleware/authenticate.js';
 import { searchRestaurants } from '../services/restaurantService.js';
+import { cacheGet } from '../services/cacheService.js';
 
 const SearchQuerySchema = z.object({
   lat: z.coerce.number(),
@@ -23,6 +24,9 @@ const restaurantRoutes: FastifyPluginAsync = async (app) => {
 
     const { lat, lng, radius, cuisine } = parsed.data;
 
+    const cacheKey = `restaurants:${lat.toFixed(2)}:${lng.toFixed(2)}:${radius}:${cuisine ?? 'all'}`;
+    const wasCached = Boolean(await cacheGet(cacheKey));
+
     const restaurants = await searchRestaurants({
       lat,
       lng,
@@ -32,7 +36,7 @@ const restaurantRoutes: FastifyPluginAsync = async (app) => {
 
     return reply.send({
       restaurants,
-      cached: true,
+      cached: wasCached,
       count: restaurants.length,
     });
   });

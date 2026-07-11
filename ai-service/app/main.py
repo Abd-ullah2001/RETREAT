@@ -7,26 +7,18 @@ from app.routers import message, plan, replan
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
-import os
+
+settings = get_settings()
 
 sentry_sdk.init(
-    dsn=os.getenv("SENTRY_DSN"),
-    environment=os.getenv("ENVIRONMENT", "development"),
-    traces_sample_rate=1.0,
+    dsn=settings.SENTRY_DSN or None,
+    environment=settings.ENVIRONMENT,
+    traces_sample_rate=0.1 if settings.is_production else 1.0,
     integrations=[
         StarletteIntegration(),
         FastApiIntegration(),
     ],
 )
-
-settings = get_settings()
-
-if settings.is_production and settings.SENTRY_DSN:
-    sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
-        environment=settings.ENVIRONMENT,
-        traces_sample_rate=0.1,
-    )
 
 app = FastAPI(title="Retreat AI Service")
 

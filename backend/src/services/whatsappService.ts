@@ -18,6 +18,3 @@ export function buildWaLink(hostPhone: string | null | undefined, messageText: s
   return `https://wa.me/${sanitized}?text=${encodeURIComponent(messageText)}`;
 }
 
-export function buildWaCopyFallback(messageText: string): string {
-  return messageText;
-}

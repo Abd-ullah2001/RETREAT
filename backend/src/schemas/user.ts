@@ -31,6 +31,3 @@ export const OnboardingBodySchema = z.object({
   onboarding_completed: z.boolean().optional(),
 });
 
-export const VerifyResponseSchema = z.object({
-  user: UserSchema,
-});
