@@ -502,19 +502,33 @@ function AuthModalInline({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
   const [authMode, setAuthMode] = useState<'signup' | 'signin'>('signup');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
 
-  const handleEmailAuth = async (event: React.FormEvent) => {
+  const handleSignUp = async (event: React.FormEvent) => {
     event.preventDefault();
     setAuthError(null);
     setAuthLoading(true);
     try {
-      if (authMode === 'signup') {
-        await signUpWithEmail(email, password);
-      }
+      await signUpWithEmail(email, password);
+      setSignupSuccess(true);
+      setPassword('');
+      setAuthMode('signin');
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Signup failed.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSignIn = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
       await signInWithEmail(email, password);
       onClose();
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Authentication failed.');
+      setAuthError(error instanceof Error ? error.message : 'Sign in failed.');
     } finally {
       setAuthLoading(false);
     }
@@ -549,7 +563,10 @@ function AuthModalInline({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
           <div className="flex-1 border-t border-[var(--ink)]/10" />
         </div>
 
-        <form onSubmit={handleEmailAuth} className="space-y-4">
+        {signupSuccess && (
+          <p className="text-xs font-semibold text-green-700 text-center mb-2">Account created! You can now sign in below.</p>
+        )}
+        <form onSubmit={authMode === 'signup' ? handleSignUp : handleSignIn} className="space-y-4">
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="h-12 w-full bg-white border-2 border-[var(--ink)] rounded-full px-4 text-sm text-[var(--ink)] outline-none" required />
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="h-12 w-full bg-white border-2 border-[var(--ink)] rounded-full px-4 text-sm text-[var(--ink)] outline-none" required />
           {authError && <p className="text-xs font-semibold text-red-600">{authError}</p>}

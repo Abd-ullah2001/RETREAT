@@ -47,10 +47,10 @@ app.get('/debug-sentry', async () => {
 async function buildServer() {
   await app.register(helmet);
 
-  await app.register(cors, {
-    origin: config.FRONTEND_URL,
-    credentials: true,
-  });
+ app.register(require('@fastify/cors'), {
+  origin: ['http://localhost:3000', 'https://your-deployed-frontend.com'],
+  credentials: true,
+});
 
   // routes
   await app.register(healthRoutes, { prefix: '/api/v1' });
@@ -118,4 +118,3 @@ async function start() {
 }
 
 start();
-
